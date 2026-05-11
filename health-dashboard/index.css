@@ -1,0 +1,16 @@
+:root {
+  --sidebar-bg: #0d1b2a;
+  --sidebar-active: #1a6ef5;
+  --topbar-bg: #ffffff;
+  --accent-blue: #1a6ef5;
+  --status-online: #52c41a;
+  --status-offline: #ff4d4f;
+  --status-unknown: #faad14;
+  --text-primary: #1f2937;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --bg-main: #f5f7fb;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; background: var(--bg-main); color: var(--text-primary); }
