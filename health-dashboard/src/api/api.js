@@ -1,4 +1,4 @@
-const BASE = "http://localhost:3000/api";
+const BASE = "https://healthcare-backend-1luc.onrender.com/api";
 
 const get = (url) => fetch(url).then((r) => r.json());
 
