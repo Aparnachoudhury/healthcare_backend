@@ -1,0 +1,52 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* ── Emerald Noir palette ── */
+  --sidebar-bg:           #0D1F17;
+  --sidebar-accent:       #10B981;
+  --sidebar-accent-dark:  #022C22;
+  --sidebar-text:         #6B9E87;
+  --sidebar-hover-bg:     #142E20;
+  --sidebar-border:       #142E20;
+
+  --accent:        #10B981;
+  --accent-dark:   #059669;
+  --accent-light:  #D1FAE5;
+  --accent-text:   #022C22;
+
+  --accent-blue:   #10B981;   /* keep var name for compatibility */
+
+  --bg-main:  #F0F4F2;
+  --bg-card:  #ffffff;
+
+  --border:       #E2EBE7;
+  --border-light: #F0F4F2;
+
+  --text-primary:   #0F1F17;
+  --text-secondary: #3D5E50;
+  --text-muted:     #8AADA0;
+
+  --status-online:  #10B981;
+  --status-offline: #EF4444;
+  --status-unknown: #F59E0B;
+
+  --topbar-height: 56px;
+  --sidebar-width: 220px;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-main);
+}
+
+button { font-family: inherit; cursor: pointer; }
+input  { font-family: inherit; }
+a      { text-decoration: none; color: inherit; }
