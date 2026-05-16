@@ -3,7 +3,6 @@ import cors from "cors";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
 app.use(express.raw({ type: "*/*" }));
 
 const OK = Buffer.from([0x00]);
@@ -237,9 +236,15 @@ app.get("/api/alarms", (req, res) => {
 // ─── DEVICE RECEIVERS (watch pushes here) ────────────────
 
 function sendWatchAck(res) {
-  res.removeHeader("Content-Type");
-  res.removeHeader("Transfer-Encoding");
-  return res.status(200).end(Buffer.from([0x00]));
+  res.statusCode = 200;
+
+  res.set({
+    "Content-Type": "application/octet-stream",
+    "Content-Length": "1",
+    "Connection": "close"
+  });
+
+  return res.end(Buffer.from([0x00]));
 }
 
 app.post("/4g/pb/upload", (req, res) => {
