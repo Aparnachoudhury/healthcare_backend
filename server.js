@@ -234,13 +234,43 @@ app.get("/api/alarms", (req, res) => {
 
 // ─── DEVICE RECEIVERS (watch pushes here) ────────────────
 
-app.post("/4g/pb/upload",         (req, res) => { console.log("📡 Health data received");      res.status(200).send(OK); });
-app.post("/4g/alarm/upload",      (req, res) => { console.log("⏰ Alarm data received");        res.status(200).send(OK); });
-app.post("/4g/call_log/upload",   (req, res) => { console.log("📞 Call/SOS data received");    res.status(200).send(OK); });
-app.post("/4g/deviceinfo/upload", (req, res) => { console.log("⌚ Device info received");      res.status(200).send(OK); });
-app.post("/4g/status/notify",     (req, res) => { console.log("📶 Status notification");       res.status(200).send(OK); });
-app.post("/4g/health/sleep",      (req, res) => { console.log("😴 Sleep data received");       res.status(200).send(OK); });
+// ─── DEVICE RECEIVERS (watch pushes here) ────────────────
 
+function sendWatchAck(res) {
+  res.removeHeader("Content-Type");
+  res.removeHeader("Transfer-Encoding");
+  return res.status(200).end(Buffer.from([0x00]));
+}
+
+app.post("/4g/pb/upload", (req, res) => {
+  console.log("📡 Health data received");
+  sendWatchAck(res);
+});
+
+app.post("/4g/alarm/upload", (req, res) => {
+  console.log("⏰ Alarm data received");
+  sendWatchAck(res);
+});
+
+app.post("/4g/call_log/upload", (req, res) => {
+  console.log("📞 Call/SOS data received");
+  sendWatchAck(res);
+});
+
+app.post("/4g/deviceinfo/upload", (req, res) => {
+  console.log("⌚ Device info received");
+  sendWatchAck(res);
+});
+
+app.post("/4g/status/notify", (req, res) => {
+  console.log("📶 Status notification");
+  sendWatchAck(res);
+});
+
+app.post("/4g/health/sleep", (req, res) => {
+  console.log("😴 Sleep data received");
+  sendWatchAck(res);
+});
 app.get("/", (req, res) => res.send("API is running 🚀"));
 
 const PORT = process.env.PORT || 3000;
