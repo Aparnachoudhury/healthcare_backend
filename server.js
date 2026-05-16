@@ -5,8 +5,6 @@ const app = express();
 app.use(cors());
 app.use(express.raw({ type: "*/*" }));
 
-const OK = Buffer.from([0x00]);
-
 // ─── SYNTHETIC DATA GENERATORS ───────────────────────────
 
 const devices = [
@@ -17,7 +15,6 @@ const devices = [
   { id: 5, nickname: "Mutter", model: "BP100CH", deviceId: "861045080041505", status: "Online",  phone: "3470444962@qq.com",   updateTime: "2026-05-11 00:00:00" },
 ];
 
-// Generate 24-hour time series data
 function generateTimeSeries(baseValue, variance, hours = 24) {
   return Array.from({ length: hours }, (_, i) => ({
     time: `${String(i).padStart(2, "0")}:00`,
@@ -34,6 +31,25 @@ function generateDeviceStats(deviceId) {
     bodyTemp: parseFloat((36.2 + Math.random() * 1.2).toFixed(1)),
   };
 }
+
+// ─── WATCH UPLOAD ENDPOINTS ───────────────────────────────
+// These MUST return a single raw 0x00 byte — nothing else.
+// The iwown test tool checks for exactly this response.
+
+function sendWatchAck(res) {
+  const buf = Buffer.from([0x00]);
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("Content-Length", 1);
+  res.end(buf);
+}
+
+app.post("/4g/pb/upload",         (req, res) => { console.log("📡 Health data received");   sendWatchAck(res); });
+app.post("/4g/alarm/upload",      (req, res) => { console.log("⏰ Alarm data received");     sendWatchAck(res); });
+app.post("/4g/call_log/upload",   (req, res) => { console.log("📞 Call/SOS data received"); sendWatchAck(res); });
+app.post("/4g/deviceinfo/upload", (req, res) => { console.log("⌚ Device info received");   sendWatchAck(res); });
+app.post("/4g/status/notify",     (req, res) => { console.log("📶 Status notification");    sendWatchAck(res); });
+app.post("/4g/health/sleep",      (req, res) => { console.log("😴 Sleep data received");    sendWatchAck(res); });
 
 // ─── HEALTH DATA ─────────────────────────────────────────
 
@@ -82,7 +98,7 @@ app.get("/api/device/:deviceId/sleep", (req, res) => {
     totalMinutes: Math.floor(Math.random() * 120) + 360,
     series: Array.from({ length: 8 }, (_, i) => ({
       time: `${22 + i}:00`,
-      stage: Math.floor(Math.random() * 3), // 0=awake, 1=light, 2=deep
+      stage: Math.floor(Math.random() * 3),
     })),
     deepSleepMinutes: Math.floor(Math.random() * 90) + 60,
     lightSleepMinutes: Math.floor(Math.random() * 120) + 180,
@@ -218,64 +234,21 @@ app.get("/api/device/:deviceId/locationtrack", (req, res) => {
 
 app.get("/api/alarms", (req, res) => {
   res.json([
-    { id: 1, nickname: "Ayen",        deviceId: "863758060992848", type: "Not worn",         time: "2026-05-11 10:46:00", location: "", content: "The watch has detected that it is not worn." },
-    { id: 2, nickname: "",            deviceId: "863758060992848", type: "Not worn",         time: "2026-05-11 09:55:59", location: "", content: "The watch has detected that it is not worn." },
-    { id: 3, nickname: "",            deviceId: "863758060992848", type: "Not worn",         time: "2026-05-11 08:16:01", location: "", content: "The watch has detected that it is not worn." },
-    { id: 4, nickname: "Bruni",       deviceId: "861045080003026", type: "Not worn",         time: "2026-05-11 07:30:01", location: "", content: "The watch has detected that it is not worn." },
-    { id: 5, nickname: "Wolli",       deviceId: "861045080059689", type: "Sleep",            time: "2026-05-11 06:53:00", location: "", content: "The watch has entered the sleep mode." },
-    { id: 6, nickname: "",            deviceId: "861045080003026", type: "Not worn",         time: "2026-05-11 06:50:01", location: "", content: "The watch has detected that it is not worn." },
-    { id: 7, nickname: "Mama",        deviceId: "863957077864525", type: "Not worn",         time: "2026-05-11 06:28:01", location: "", content: "The watch has detected that it is not worn." },
-    { id: 8, nickname: "Mutter",      deviceId: "861045080041505", type: "Sleep",            time: "2026-05-11 06:27:00", location: "", content: "The watch has entered the sleep mode." },
-    { id: 9, nickname: "Reloj Ángel", deviceId: "862688076415040", type: "Sleep",            time: "2026-05-11 06:26:00", location: "", content: "The watch has entered the sleep mode." },
-    { id: 10, nickname: "",           deviceId: "862688076415040", type: "Heart rate warning", time: "2026-05-11 06:11:00", location: "", content: "The watch has detected a heart rate warning." },
+    { id: 1,  nickname: "Ayen",        deviceId: "863758060992848", type: "Not worn",          time: "2026-05-11 10:46:00", location: "", content: "The watch has detected that it is not worn." },
+    { id: 2,  nickname: "",            deviceId: "863758060992848", type: "Not worn",          time: "2026-05-11 09:55:59", location: "", content: "The watch has detected that it is not worn." },
+    { id: 3,  nickname: "",            deviceId: "863758060992848", type: "Not worn",          time: "2026-05-11 08:16:01", location: "", content: "The watch has detected that it is not worn." },
+    { id: 4,  nickname: "Bruni",       deviceId: "861045080003026", type: "Not worn",          time: "2026-05-11 07:30:01", location: "", content: "The watch has detected that it is not worn." },
+    { id: 5,  nickname: "Wolli",       deviceId: "861045080059689", type: "Sleep",             time: "2026-05-11 06:53:00", location: "", content: "The watch has entered the sleep mode." },
+    { id: 6,  nickname: "",            deviceId: "861045080003026", type: "Not worn",          time: "2026-05-11 06:50:01", location: "", content: "The watch has detected that it is not worn." },
+    { id: 7,  nickname: "Mama",        deviceId: "863957077864525", type: "Not worn",          time: "2026-05-11 06:28:01", location: "", content: "The watch has detected that it is not worn." },
+    { id: 8,  nickname: "Mutter",      deviceId: "861045080041505", type: "Sleep",             time: "2026-05-11 06:27:00", location: "", content: "The watch has entered the sleep mode." },
+    { id: 9,  nickname: "Reloj Ángel", deviceId: "862688076415040", type: "Sleep",             time: "2026-05-11 06:26:00", location: "", content: "The watch has entered the sleep mode." },
+    { id: 10, nickname: "",            deviceId: "862688076415040", type: "Heart rate warning", time: "2026-05-11 06:11:00", location: "", content: "The watch has detected a heart rate warning." },
   ]);
 });
 
-// ─── DEVICE RECEIVERS (watch pushes here) ────────────────
+// ─── ROOT ─────────────────────────────────────────────────
 
-// ─── DEVICE RECEIVERS (watch pushes here) ────────────────
-
-function sendWatchAck(res) {
-  res.statusCode = 200;
-
-  res.set({
-    "Content-Type": "application/octet-stream",
-    "Content-Length": "1",
-    "Connection": "close"
-  });
-
-  return res.end(Buffer.from([0x00]));
-}
-
-app.post("/4g/pb/upload", (req, res) => {
-  console.log("📡 Health data received");
-  sendWatchAck(res);
-});
-
-app.post("/4g/alarm/upload", (req, res) => {
-  console.log("⏰ Alarm data received");
-  sendWatchAck(res);
-});
-
-app.post("/4g/call_log/upload", (req, res) => {
-  console.log("📞 Call/SOS data received");
-  sendWatchAck(res);
-});
-
-app.post("/4g/deviceinfo/upload", (req, res) => {
-  console.log("⌚ Device info received");
-  sendWatchAck(res);
-});
-
-app.post("/4g/status/notify", (req, res) => {
-  console.log("📶 Status notification");
-  sendWatchAck(res);
-});
-
-app.post("/4g/health/sleep", (req, res) => {
-  console.log("😴 Sleep data received");
-  sendWatchAck(res);
-});
 app.get("/", (req, res) => res.send("API is running 🚀"));
 
 const PORT = process.env.PORT || 3000;
