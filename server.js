@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import db from "./firebase.js";
 
 const app = express();
 app.use(cors());
@@ -44,7 +45,13 @@ function sendWatchAck(res) {
   res.end(buf);
 }
 
-app.post("/4g/pb/upload",         (req, res) => { console.log("📡 Health data received");   sendWatchAck(res); });
+app.post("/4g/pb/upload", async (req, res) => {
+   console.log("🩺 Health data received");
+
+   await db.collection("healthData").add(req.body);
+
+   sendWatchAck(res);
+});
 app.post("/4g/alarm/upload",      (req, res) => { console.log("⏰ Alarm data received");     sendWatchAck(res); });
 app.post("/4g/call_log/upload",   (req, res) => { console.log("📞 Call/SOS data received"); sendWatchAck(res); });
 app.post("/4g/deviceinfo/upload", (req, res) => { console.log("⌚ Device info received");   sendWatchAck(res); });
