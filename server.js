@@ -48,7 +48,10 @@ function sendWatchAck(res) {
 app.post("/4g/pb/upload", async (req, res) => {
    console.log("🩺 Health data received");
 
-   await db.collection("healthData").add(req.body);
+   await db.collection("healthData").add({
+  rawData: JSON.stringify(req.body),
+  receivedAt: new Date(),
+});
 
    sendWatchAck(res);
 });
