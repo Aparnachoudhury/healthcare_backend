@@ -4,17 +4,14 @@ import db from "./firebase.js";
 
 const app = express();
 app.use(cors());
-app.use(express.raw({ type: "*/*" }));
+app.use(express.json());
+app.use(express.raw({
+   type:"application/octet-stream"
+}));
 
 // ─── SYNTHETIC DATA GENERATORS ───────────────────────────
 
-const devices = [
-  { id: 1, nickname: "Ayen",   model: "H102CSH", deviceId: "863758060992848", status: "Online",  phone: "",                    updateTime: "2026-05-11 00:00:00" },
-  { id: 2, nickname: "Bruni",  model: "H102CSH", deviceId: "861045080003026", status: "Online",  phone: "",                    updateTime: "2026-05-11 00:00:00" },
-  { id: 3, nickname: "Wolli",  model: "H102CSH", deviceId: "861045080059689", status: "Online",  phone: "",                    updateTime: "2026-05-11 00:00:00" },
-  { id: 4, nickname: "Mama",   model: "H102CSH", deviceId: "863957077864525", status: "Offline", phone: "",                    updateTime: "2026-05-11 00:00:00" },
-  { id: 5, nickname: "Mutter", model: "BP100CH", deviceId: "861045080041505", status: "Online",  phone: "3470444962@qq.com",   updateTime: "2026-05-11 00:00:00" },
-];
+
 
 function generateTimeSeries(baseValue, variance, hours = 24) {
   return Array.from({ length: hours }, (_, i) => ({
@@ -23,15 +20,6 @@ function generateTimeSeries(baseValue, variance, hours = 24) {
   }));
 }
 
-function generateDeviceStats(deviceId) {
-  return {
-    deviceId,
-    steps: Math.floor(Math.random() * 8000) + 1000,
-    heartRate: Math.floor(Math.random() * 20) + 65,
-    bloodOxygen: Math.floor(Math.random() * 4) + 96,
-    bodyTemp: parseFloat((36.2 + Math.random() * 1.2).toFixed(1)),
-  };
-}
 
 // ─── WATCH UPLOAD ENDPOINTS ───────────────────────────────
 // These MUST return a single raw 0x00 byte — nothing else.
@@ -46,30 +34,96 @@ function sendWatchAck(res) {
 }
 
 app.post("/4g/pb/upload", async (req, res) => {
-   console.log("🩺 Health data received");
 
-   await db.collection("healthData").add({
-  rawData: JSON.stringify(req.body),
-  receivedAt: new Date(),
+try {
+
+const data = req.body;
+
+await db.collection("live_devices")
+.doc(data.device_id)
+.set(data);
+
+// Mongo save
+await db.collection("healthData").add({
+    ...data,
+    receivedAt: new Date()
 });
 
-   sendWatchAck(res);
-});
-app.post("/4g/alarm/upload",      (req, res) => { console.log("⏰ Alarm data received");     sendWatchAck(res); });
-app.post("/4g/call_log/upload",   (req, res) => { console.log("📞 Call/SOS data received"); sendWatchAck(res); });
-app.post("/4g/deviceinfo/upload", (req, res) => { console.log("⌚ Device info received");   sendWatchAck(res); });
-app.post("/4g/status/notify",     (req, res) => { console.log("📶 Status notification");    sendWatchAck(res); });
-app.post("/4g/health/sleep",      (req, res) => { console.log("😴 Sleep data received");    sendWatchAck(res); });
+console.log("Saved:", data.device_id);
 
+sendWatchAck(res);
+
+} catch(err){
+
+console.log(err);
+
+res.status(500).json({
+ error: err.message
+});
+
+}
+
+});
 // ─── HEALTH DATA ─────────────────────────────────────────
 
-app.get("/api/health-data", (req, res) => {
-  const data = devices.map((d) => ({
-    ...d,
-    ...generateDeviceStats(d.deviceId),
-  }));
-  res.json(data);
+app.get("/api/health-data", async (req,res)=>{
+
+try{
+
+const snapshot=
+await db.collection(
+"live_devices"
+).get();
+
+const data=
+snapshot.docs.map(
+(doc,index)=>{
+
+const d=
+doc.data();
+
+return{
+id:d.device_id || doc.id,
+nickname:d.device_id || "IWOWN",
+model:d.model || "H102CSH",
+deviceId:d.device_id || doc.id,
+
+status:d.status || "Online",
+
+steps:d?.decoded?.data?.steps || 0,
+
+heartRate:
+d?.decoded?.data?.heart_rate_bpm || 0,
+
+bloodOxygen:
+d?.decoded?.data?.spo2_percent || 0,
+
+bodyTemp:
+d?.decoded?.data?.body_temperature_c || 0,
+
+phone: d?.decoded?.data?.phone_number || "N/A",
+
+updateTime:
+new Date().toLocaleString()
+};
+
 });
+
+res.json(data);
+
+}catch(err){
+
+console.log(err);
+
+res.status(500)
+.json({
+error:err.message
+});
+
+}
+
+});
+
 
 // ─── DEVICE DETAIL TABS ──────────────────────────────────
 
@@ -86,19 +140,60 @@ app.get("/api/device/:deviceId/overview", (req, res) => {
   });
 });
 
-app.get("/api/device/:deviceId/heartrate", (req, res) => {
-  const series = generateTimeSeries(72, 20);
-  const values = series.map((s) => s.value);
-  res.json({
-    deviceId: req.params.deviceId,
-    date: "2026-05-11",
-    series,
-    average: Math.round(values.reduce((a, b) => a + b, 0) / values.length),
-    max: Math.max(...values),
-    min: Math.min(...values),
-    warningThreshold: 110,
-    warningRecords: series.filter((s) => s.value > 100).map((s) => ({ time: s.time, value: s.value, type: "High" })),
-  });
+app.get("/api/device/:deviceId/heartrate",
+
+async(req,res)=>{
+
+const deviceId=
+req.params.deviceId;
+
+const snapshot=
+await db
+.collection("live_devices")
+.doc(deviceId)
+.get();
+
+if(!snapshot.exists){
+
+return res.json({
+
+series:[],
+average:0,
+max:0,
+min:0
+
+});
+
+}
+
+const d=
+snapshot.data();
+
+const hr=
+d?.decoded
+?.data
+?.heart_rate_bpm || 0;
+
+const series=[{
+
+time:
+new Date()
+.toLocaleTimeString(),
+
+value:hr
+
+}];
+
+res.json({
+
+deviceId,
+series,
+average:hr,
+max:hr,
+min:hr
+
+});
+
 });
 
 app.get("/api/device/:deviceId/sleep", (req, res) => {
@@ -134,32 +229,100 @@ app.get("/api/device/:deviceId/bloodpressure", (req, res) => {
   });
 });
 
-app.get("/api/device/:deviceId/bloodoxygen", (req, res) => {
-  const series = generateTimeSeries(97, 3);
-  const values = series.map((s) => s.value);
-  res.json({
-    deviceId: req.params.deviceId,
-    date: "2026-05-11",
-    series,
-    average: Math.round(values.reduce((a, b) => a + b, 0) / values.length),
-    max: Math.max(...values),
-    min: Math.min(...values),
-    warningRate: "5%",
-    warningRecords: series.filter((s) => s.value < 95),
-  });
+
+app.get("/api/device/:deviceId/bloodoxygen", async(req,res)=>{
+
+const snapshot = await db
+.collection("live_devices")
+.doc(req.params.deviceId)
+.get();
+
+if(!snapshot.exists){
+ return res.json({
+   series:[],
+   average:0,
+   max:0,
+   min:0
+ });
+}
+
+const d=snapshot.data();
+
+const spo2 =
+d?.decoded?.data?.spo2_percent || 0;
+
+const series=[{
+   time:new Date().toLocaleTimeString(),
+   value:spo2
+}];
+
+res.json({
+   deviceId:req.params.deviceId,
+   series,
+   average:spo2,
+   max:spo2,
+   min:spo2,
+   warningRecords:[]
 });
 
-app.get("/api/device/:deviceId/bodytemp", (req, res) => {
-  const series = generateTimeSeries(36.5, 0.8);
-  res.json({
-    deviceId: req.params.deviceId,
-    date: "2026-05-11",
-    series,
-    average: 36.5,
-    max: Math.max(...series.map((s) => s.value)),
-    min: Math.min(...series.map((s) => s.value)),
-    warningRecords: series.filter((s) => s.value > 37.5),
-  });
+});
+
+app.get("/api/device/:deviceId/bodytemp", async(req,res)=>{
+
+const snapshot = await db
+.collection("live_devices")
+.doc(req.params.deviceId)
+.get();
+
+if(!snapshot.exists){
+
+ return res.json({
+   series:[],
+   average:0,
+   max:0,
+   min:0,
+   warningRecords:[]
+ });
+
+}
+
+const d = snapshot.data();
+
+console.log(
+"BODY TEMP DATA:",
+JSON.stringify(d,null,2)
+);
+
+const temp =
+d?.decoded?.data?.body_temperature_c ?? null;
+
+const series =
+temp !== null
+? [{
+    time:new Date().toLocaleTimeString(),
+    value:temp
+  }]
+: [];
+
+res.json({
+
+   deviceId:req.params.deviceId,
+
+   date:
+   new Date()
+   .toISOString()
+   .split("T")[0],
+
+   series,
+
+   average: temp ?? 0,
+   max: temp ?? 0,
+   min: temp ?? 0,
+
+   warningRecords:[]
+
+});
+
 });
 
 app.get("/api/device/:deviceId/hearthealth", (req, res) => {

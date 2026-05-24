@@ -15,13 +15,17 @@ import { getBloodOxygen } from '../../api/api';
 
 const BloodOxygen = () => {
 
-  // device id from URL
   const { id } = useParams();
 
-  // blood oxygen data
-  const [data, setData] = useState(null);
+  const [data, setData] = useState({
+    date: new Date().toISOString().split("T")[0],
+    series: [],
+    average: 0,
+    max: 0,
+    min: 0,
+    warningRecords: []
+  });
 
-  // loading state
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,11 +33,19 @@ const BloodOxygen = () => {
     getBloodOxygen(id)
       .then((response) => {
 
-        setData(response);
+        setData({
+          date: response.date || new Date().toISOString().split("T")[0],
+          series: response.series || [],
+          average: response.average || 0,
+          max: response.max || 0,
+          min: response.min || 0,
+          warningRecords: response.warningRecords || []
+        });
 
         setLoading(false);
 
       })
+
       .catch((err) => {
 
         console.log(err);
@@ -44,17 +56,12 @@ const BloodOxygen = () => {
 
   }, [id]);
 
-  // loading UI
   if (loading) {
     return <div>Loading...</div>;
   }
 
-  // no data UI
-  if (!data) {
-    return <div>No blood oxygen data available</div>;
-  }
-
   return (
+
     <div>
 
       <h3
@@ -77,8 +84,6 @@ const BloodOxygen = () => {
 
       </h3>
 
-      {/* Blood Oxygen Chart */}
-
       <ResponsiveContainer width="100%" height={220}>
 
         <LineChart data={data.series}>
@@ -87,13 +92,12 @@ const BloodOxygen = () => {
 
           <XAxis
             dataKey="time"
-            tick={{ fontSize: 11 }}
-            interval={3}
+            tick={{ fontSize:11 }}
           />
 
           <YAxis
-            domain={[90, 100]}
-            tick={{ fontSize: 11 }}
+            domain={[90,100]}
+            tick={{ fontSize:11 }}
           />
 
           <Tooltip />
@@ -110,41 +114,40 @@ const BloodOxygen = () => {
 
       </ResponsiveContainer>
 
-      {/* Stats */}
-
       <div
         style={{
-          display: 'flex',
-          gap: '24px',
-          marginTop: '16px'
+          display:'flex',
+          gap:'24px',
+          marginTop:'16px'
         }}
       >
 
         {[
           {
-            label: 'Average oxygen needed',
-            value: `${data.average}%`
+            label:'Average oxygen needed',
+            value:`${data.average}%`
           },
           {
-            label: 'Maximum oxygen needed',
-            value: `${data.max}%`
+            label:'Maximum oxygen needed',
+            value:`${data.max}%`
           },
           {
-            label: 'Minimum oxygen needed',
-            value: `${data.min}%`
+            label:'Minimum oxygen needed',
+            value:`${data.min}%`
           }
-        ].map((item) => (
+
+        ].map((item)=>(
 
           <div
             key={item.label}
-            style={{ textAlign: 'center' }}
+            style={{textAlign:'center'}}
           >
 
             <div
               style={{
-                fontSize: '22px',
-                fontWeight: 700,
-                color: '#1a6ef5'
+                fontSize:'22px',
+                fontWeight:700,
+                color:'#1a6ef5'
               }}
             >
               {item.value}
@@ -152,8 +155,8 @@ const BloodOxygen = () => {
 
             <div
               style={{
-                fontSize: '11px',
-                color: 'var(--text-muted)'
+                fontSize:'11px',
+                color:'var(--text-muted)'
               }}
             >
               {item.label}
@@ -165,36 +168,31 @@ const BloodOxygen = () => {
 
       </div>
 
-      {/* Warning Records */}
-
       <div
         style={{
-          marginTop: '16px',
-          fontSize: '12px',
-          color: 'var(--text-muted)'
+          marginTop:'16px',
+          fontSize:'12px'
         }}
       >
 
         <strong>Blood oxygen warning records</strong>
 
-        {data.warningRecords.length === 0 ? (
+        {data.warningRecords.length===0 ? (
 
-          <div style={{ marginTop: '6px' }}>
+          <div style={{marginTop:'6px'}}>
             No warning records
           </div>
 
         ) : (
 
-          data.warningRecords.map((record, index) => (
+          data.warningRecords.map((record,index)=>(
 
             <div
               key={index}
-              style={{ marginTop: '6px' }}
+              style={{marginTop:'6px'}}
             >
 
-              {record.time}
-              {' - '}
-              {record.value}%
+              {record.time} - {record.value}%
 
             </div>
 
@@ -205,7 +203,9 @@ const BloodOxygen = () => {
       </div>
 
     </div>
+
   );
+
 };
 
 export default BloodOxygen;

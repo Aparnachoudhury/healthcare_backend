@@ -15,13 +15,17 @@ import { getBodyTemp } from '../../api/api';
 
 const BodyTemp = () => {
 
-  // device id from URL
   const { id } = useParams();
 
-  // body temperature data
-  const [data, setData] = useState(null);
+  const [data, setData] = useState({
+    date: new Date().toISOString().split("T")[0],
+    series: [],
+    average: 0,
+    max: 0,
+    min: 0,
+    warningRecords: []
+  });
 
-  // loading state
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,7 +33,14 @@ const BodyTemp = () => {
     getBodyTemp(id)
       .then((response) => {
 
-        setData(response);
+        setData({
+          date: response?.date || new Date().toISOString().split("T")[0],
+          series: response?.series || [],
+          average: response?.average || 0,
+          max: response?.max || 0,
+          min: response?.min || 0,
+          warningRecords: response?.warningRecords || []
+        });
 
         setLoading(false);
 
@@ -44,14 +55,8 @@ const BodyTemp = () => {
 
   }, [id]);
 
-  // loading UI
   if (loading) {
     return <div>Loading...</div>;
-  }
-
-  // no data UI
-  if (!data) {
-    return <div>No body temperature data available</div>;
   }
 
   return (
@@ -77,8 +82,6 @@ const BodyTemp = () => {
 
       </h3>
 
-      {/* Body Temperature Chart */}
-
       <ResponsiveContainer width="100%" height={220}>
 
         <LineChart data={data.series}>
@@ -92,8 +95,8 @@ const BodyTemp = () => {
           />
 
           <YAxis
-            domain={[35, 39]}
-            tick={{ fontSize: 11 }}
+            domain={[35,39]}
+            tick={{ fontSize:11 }}
           />
 
           <Tooltip />
@@ -110,41 +113,39 @@ const BodyTemp = () => {
 
       </ResponsiveContainer>
 
-      {/* Statistics */}
-
       <div
         style={{
-          display: 'flex',
-          gap: '24px',
-          marginTop: '16px'
+          display:'flex',
+          gap:'24px',
+          marginTop:'16px'
         }}
       >
 
         {[
           {
-            label: 'Average temperature',
-            value: `${data.average}°C`
+            label:'Average temperature',
+            value:`${data.average}°C`
           },
           {
-            label: 'Maximum temperature',
-            value: `${data.max}°C`
+            label:'Maximum temperature',
+            value:`${data.max}°C`
           },
           {
-            label: 'Minimum temperature',
-            value: `${data.min}°C`
+            label:'Minimum temperature',
+            value:`${data.min}°C`
           }
-        ].map((item) => (
+        ].map((item)=>(
 
           <div
             key={item.label}
-            style={{ textAlign: 'center' }}
+            style={{textAlign:'center'}}
           >
 
             <div
               style={{
-                fontSize: '22px',
-                fontWeight: 700,
-                color: '#fa8c16'
+                fontSize:'22px',
+                fontWeight:700,
+                color:'#fa8c16'
               }}
             >
               {item.value}
@@ -152,8 +153,8 @@ const BodyTemp = () => {
 
             <div
               style={{
-                fontSize: '11px',
-                color: 'var(--text-muted)'
+                fontSize:'11px',
+                color:'var(--text-muted)'
               }}
             >
               {item.label}
@@ -165,13 +166,11 @@ const BodyTemp = () => {
 
       </div>
 
-      {/* Warning Records */}
-
       <div
         style={{
-          marginTop: '16px',
-          fontSize: '12px',
-          color: 'var(--text-muted)'
+          marginTop:'16px',
+          fontSize:'12px',
+          color:'var(--text-muted)'
         }}
       >
 
@@ -179,23 +178,19 @@ const BodyTemp = () => {
 
         {data.warningRecords.length === 0 ? (
 
-          <div style={{ marginTop: '6px' }}>
+          <div style={{marginTop:'6px'}}>
             No warning records
           </div>
 
         ) : (
 
-          data.warningRecords.map((record, index) => (
+          data.warningRecords.map((record,index)=>(
 
             <div
               key={index}
-              style={{ marginTop: '6px' }}
+              style={{marginTop:'6px'}}
             >
-
-              {record.time}
-              {' - '}
-              {record.value}°C
-
+              {record.time} - {record.value}°C
             </div>
 
           ))

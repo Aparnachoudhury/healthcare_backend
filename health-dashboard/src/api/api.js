@@ -1,6 +1,14 @@
-const BASE = "https://healthcare-backend-1luc.onrender.com/api";
+const BASE = "http://localhost:3000/api"
 
-const get = (url) => fetch(url).then((r) => r.json());
+const get = async (url) => {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`);
+  }
+
+  return response.json();
+};
 
 export const getHealthData    = ()           => get(`${BASE}/health-data`);
 export const getAlarms        = ()           => get(`${BASE}/alarms`);

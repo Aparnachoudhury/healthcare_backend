@@ -17,19 +17,32 @@ const Healthdata = () => {
   const [applied, setApplied] = useState({ deviceId: '', nickname: '', phone: '' });
   const [page,    setPage]    = useState(1);
   const PAGE_SIZE = 10;
-
   useEffect(() => {
-    getHealthData()
-      .then(d => setRaw(d))
-      .catch(e => console.error(e))
-      .finally(() => setLoading(false));
-  }, []);
+  async function loadData() {
+    try {
+      const response = await getHealthData();
+
+      console.log("API RESPONSE:", response);
+
+      setRaw(response); // direct array
+
+    } catch (err) {
+      console.error("API ERROR:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  loadData();
+}, []);
 
   const filtered = raw.filter(d =>
-    d.deviceId.toLowerCase().includes(applied.deviceId.toLowerCase()) &&
-    d.nickname.toLowerCase().includes(applied.nickname.toLowerCase()) &&
-    d.phone.includes(applied.phone)
-  );
+    (d.deviceId || "").toLowerCase().includes(applied.deviceId.toLowerCase()) &&
+    (d.nickname || "").toLowerCase().includes(applied.nickname.toLowerCase()) &&
+    (d.phone || "").includes(applied.phone)
+);
+
+ 
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const rows       = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -112,58 +125,86 @@ const Healthdata = () => {
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr><td colSpan={13} style={emptyCell}>Loading…</td></tr>
-              )}
-              {!loading && rows.length === 0 && (
-                <tr><td colSpan={13} style={emptyCell}>No data found</td></tr>
-              )}
-              {!loading && rows.map((d, i) => (
-                <tr
-                  key={d.id}
-                  style={{ borderBottom: '1px solid var(--border)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#F0FDF4'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <td style={tdSt}>{(page - 1) * PAGE_SIZE + i + 1}</td>
-                  <td style={{ ...tdSt, fontWeight: 500 }}>{d.nickname}</td>
-                  <td style={tdSt}>{d.model}</td>
-                  <td style={{ ...tdSt, fontFamily: 'monospace', fontSize: '12px', color: 'var(--text-secondary)' }}>{d.deviceId}</td>
-                  <td style={tdSt}>
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '5px',
-                      color: STATUS_COLOR[d.status] || STATUS_COLOR.Unknown,
-                      fontSize: '12px', fontWeight: 600,
-                    }}>
-                      <span style={{
-                        width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
-                        background: STATUS_COLOR[d.status] || STATUS_COLOR.Unknown,
-                      }}/>
-                      {d.status}
-                    </span>
-                  </td>
-                  <td style={tdSt}>{d.steps}</td>
-                  <td style={tdSt}>{d.heartRate}</td>
-                  <td style={tdSt}>{d.bloodOxygen}</td>
-                  <td style={tdSt}>{d.bodyTemp}</td>
-                  <td style={tdSt}>{d.phone}</td>
-                  <td style={{ ...tdSt, fontSize: '12px', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>{d.updateTime}</td>
-                  <td style={tdSt}><span style={actionSt}>Edit</span></td>
-                  <td style={tdSt}>
-                    <span
-                      style={{ ...actionSt, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      onClick={() => navigate(`/device/${d.id}`)}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                        <ellipse cx="6.5" cy="6.5" rx="5.5" ry="3.5" stroke="#10B981" strokeWidth="1.3"/>
-                        <circle cx="6.5" cy="6.5" r="1.5" fill="#10B981"/>
-                      </svg>
-                      View
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+  {loading && (
+    <tr>
+      <td colSpan={13} style={emptyCell}>
+        Loading...
+      </td>
+    </tr>
+  )}
+
+  {!loading && rows.length === 0 && (
+    <tr>
+      <td colSpan={13} style={emptyCell}>
+        No data found
+      </td>
+    </tr>
+  )}
+
+  {!loading && rows.map((d, i) => (
+    <tr key={d.id}>
+
+      <td style={tdSt}>
+        {(page - 1) * PAGE_SIZE + i + 1}
+      </td>
+
+      <td style={{ ...tdSt, fontWeight:500 }}>
+        {d.nickname || "N/A"}
+      </td>
+
+      <td style={tdSt}>
+        {d.model || "N/A"}
+      </td>
+
+      <td style={{ ...tdSt, fontFamily:'monospace' }}>
+        {d.deviceId || d.id}
+      </td>
+
+      <td style={tdSt}>
+        {d.status || "Unknown"}
+      </td>
+
+      <td style={tdSt}>
+        {d.steps || "N/A"}
+      </td>
+
+      <td style={tdSt}>
+        {d.heartRate || "N/A"}
+      </td>
+
+      <td style={tdSt}>
+        {d.bloodOxygen || "N/A"}
+      </td>
+
+      <td style={tdSt}>
+        {d.bodyTemp || "N/A"}
+      </td>
+
+      <td style={tdSt}>
+        {d.phone || "N/A"}
+      </td>
+
+      <td style={{ ...tdSt, fontSize:'12px' }}>
+        {d.updateTime || "N/A"}
+      </td>
+
+      <td style={tdSt}>
+        <span style={actionSt}>Edit</span>
+      </td>
+
+      <td style={tdSt}>
+        <span
+          style={actionSt}
+          onClick={() => navigate(`/device/${d.id}`)}
+        >
+          View
+        </span>
+      </td>
+
+    </tr>
+  ))}
+</tbody>
+  
           </table>
         </div>
 
