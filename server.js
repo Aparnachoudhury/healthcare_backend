@@ -9,6 +9,21 @@ app.use(express.raw({
    type:"application/octet-stream"
 }));
 
+// ─── IST HELPERS ──────────────────────────────────────────
+const IST = { timeZone: "Asia/Kolkata" };
+
+function istTime(date) {
+  return date.toLocaleTimeString("en-IN", { ...IST, hour: "2-digit", minute: "2-digit" });
+}
+
+function istDateTime(date) {
+  return date.toLocaleString("en-IN", IST);
+}
+
+function istDate(date) {
+  return date.toLocaleDateString("en-CA", IST); // en-CA → YYYY-MM-DD
+}
+
 // ─── FIRESTORE HEALTH DATA HISTORY UTILITY ────────────────
 
 async function getDeviceHealthHistory(deviceId) {
@@ -19,7 +34,6 @@ async function getDeviceHealthHistory(deviceId) {
     const d = doc.data();
     let payload = d;
 
-    // Check for rawData field (which could be a JSON string or serialized buffer object)
     if (d.rawData) {
       try {
         const parsedRaw = JSON.parse(d.rawData);
@@ -35,13 +49,12 @@ async function getDeviceHealthHistory(deviceId) {
           payload = parsedRaw;
         }
       } catch (err) {
-        // Ignore parsing errors
+        // ignore
       }
     }
 
     const recDeviceId = payload.device_id || d.device_id || "";
     if (recDeviceId.toString() === deviceId.toString()) {
-      // Extract timestamp
       let timestamp = new Date();
       if (d.receivedAt) {
         timestamp = d.receivedAt.toDate ? d.receivedAt.toDate() : new Date(d.receivedAt);
@@ -51,7 +64,6 @@ async function getDeviceHealthHistory(deviceId) {
         timestamp = new Date(payload.created_at);
       }
 
-      // Extract details
       const innerData = payload.decoded?.data || payload.data || payload;
 
       records.push({
@@ -74,14 +86,11 @@ async function getDeviceHealthHistory(deviceId) {
     }
   });
 
-  // Sort by timestamp ascending
   records.sort((a, b) => a.timestamp - b.timestamp);
   return records;
 }
 
 // ─── WATCH UPLOAD ENDPOINTS ───────────────────────────────
-// These MUST return a single raw 0x00 byte — nothing else.
-// The iwown test tool checks for exactly this response.
 
 function sendWatchAck(res) {
   const buf = Buffer.from([0x00]);
@@ -95,13 +104,9 @@ app.post("/4g/pb/upload", async (req, res) => {
   try {
     const data = req.body;
     await db.collection("live_devices")
-      .doc(data.device_id)
-      .set({
-        ...data,
-        receivedAt: new Date()
-      });
+      .doc(String(data.device_id))
+      .set({ ...data, receivedAt: new Date() });
 
-    // Mongo save
     await db.collection("healthData").add({
       ...data,
       receivedAt: new Date()
@@ -111,20 +116,18 @@ app.post("/4g/pb/upload", async (req, res) => {
     sendWatchAck(res);
   } catch(err){
     console.log(err);
-    res.status(500).json({
-      error: err.message
-    });
+    res.status(500).json({ error: err.message });
   }
 });
 
 // ─── HEALTH DATA ─────────────────────────────────────────
 
-app.get("/api/health-data", async (req,res)=>{
-  try{
+app.get("/api/health-data", async (req, res) => {
+  try {
     const snapshot = await db.collection("live_devices").get();
-    const data = snapshot.docs.map((doc)=>{
+    const data = snapshot.docs.map(doc => {
       const d = doc.data();
-      
+
       let updateTime = new Date();
       if (d.receivedAt) {
         updateTime = d.receivedAt.toDate ? d.receivedAt.toDate() : new Date(d.receivedAt);
@@ -145,15 +148,13 @@ app.get("/api/health-data", async (req,res)=>{
         bloodOxygen: d?.decoded?.data?.spo2_percent || d?.spo2 || d?.decoded?.data?.spo2 || 0,
         bodyTemp: d?.decoded?.data?.body_temperature_c || d?.temperature || d?.decoded?.data?.temperature || 0,
         phone: d?.decoded?.data?.phone_number || d?.phone || "N/A",
-        updateTime: updateTime.toLocaleString()
+        updateTime: istDateTime(updateTime)
       };
     });
     res.json(data);
-  } catch(err){
+  } catch(err) {
     console.log(err);
-    res.status(500).json({
-      error:err.message
-    });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -163,12 +164,11 @@ app.get("/api/device/:deviceId/overview", async (req, res) => {
   try {
     const deviceId = req.params.deviceId;
     const history = await getDeviceHealthHistory(deviceId);
-    
+
     let latest = {};
     if (history.length > 0) {
       latest = history[history.length - 1];
     } else {
-      // Fallback: check live_devices doc
       const liveDoc = await db.collection("live_devices").doc(deviceId).get();
       if (liveDoc.exists) {
         const d = liveDoc.data();
@@ -188,15 +188,15 @@ app.get("/api/device/:deviceId/overview", async (req, res) => {
 
     res.json({
       deviceId,
-      date: latest.timestamp ? latest.timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: latest.timestamp ? istDate(latest.timestamp) : istDate(new Date()),
       steps: latest.steps || 0,
       heartRate: latest.heartRate || 0,
       bloodOxygen: latest.spo2 || 0,
       bodyTemp: latest.bodyTemp || 0,
       sleepHours: latest.sleepHours || 0,
-      bloodPressure: { 
-        systolic: latest.systolic || 0, 
-        diastolic: latest.diastolic || 0 
+      bloodPressure: {
+        systolic: latest.systolic || 0,
+        diastolic: latest.diastolic || 0
       },
     });
   } catch (err) {
@@ -211,7 +211,7 @@ app.get("/api/device/:deviceId/heartrate", async (req, res) => {
     const hrRecords = history.filter(r => r.heartRate > 0);
 
     const series = hrRecords.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       value: r.heartRate
     }));
 
@@ -220,13 +220,7 @@ app.get("/api/device/:deviceId/heartrate", async (req, res) => {
     const max = hrValues.length ? Math.max(...hrValues) : 0;
     const min = hrValues.length ? Math.min(...hrValues) : 0;
 
-    res.json({
-      deviceId,
-      series,
-      average,
-      max,
-      min
-    });
+    res.json({ deviceId, series, average, max, min });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -244,13 +238,13 @@ app.get("/api/device/:deviceId/sleep", async (req, res) => {
     const lightSleepMinutes = totalMinutes - deepSleepMinutes;
 
     const series = sleepRecords.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       stage: r.sleepHours > 6 ? 2 : r.sleepHours > 4 ? 1 : 0
     }));
 
     res.json({
       deviceId,
-      date: latestSleep ? latestSleep.timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: latestSleep ? istDate(latestSleep.timestamp) : istDate(new Date()),
       totalMinutes,
       series,
       deepSleepMinutes,
@@ -270,25 +264,24 @@ app.get("/api/device/:deviceId/bloodpressure", async (req, res) => {
     const bpRecords = history.filter(r => r.systolic > 0 && r.diastolic > 0);
 
     const series = bpRecords.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       systolic: r.systolic,
       diastolic: r.diastolic
     }));
 
     const systolics = bpRecords.map(r => r.systolic);
     const diastolics = bpRecords.map(r => r.diastolic);
-
     const avgSystolic = systolics.length ? Math.round(systolics.reduce((a, b) => a + b, 0) / systolics.length) : 0;
     const avgDiastolic = diastolics.length ? Math.round(diastolics.reduce((a, b) => a + b, 0) / diastolics.length) : 0;
 
     res.json({
       deviceId,
-      date: bpRecords.length ? bpRecords[bpRecords.length - 1].timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: bpRecords.length ? istDate(bpRecords[bpRecords.length - 1].timestamp) : istDate(new Date()),
       series,
       avgSystolic,
       avgDiastolic,
       warningRecords: bpRecords.filter(r => r.systolic > 140 || r.diastolic > 90).map(r => ({
-        time: r.timestamp.toLocaleString(),
+        time: istDateTime(r.timestamp),
         value: `${r.systolic}/${r.diastolic}`
       }))
     });
@@ -304,7 +297,7 @@ app.get("/api/device/:deviceId/bloodoxygen", async (req, res) => {
     const spo2Records = history.filter(r => r.spo2 > 0);
 
     const series = spo2Records.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       value: r.spo2
     }));
 
@@ -320,7 +313,7 @@ app.get("/api/device/:deviceId/bloodoxygen", async (req, res) => {
       max,
       min,
       warningRecords: spo2Records.filter(r => r.spo2 < 95).map(r => ({
-        time: r.timestamp.toLocaleString(),
+        time: istDateTime(r.timestamp),
         value: r.spo2
       }))
     });
@@ -336,7 +329,7 @@ app.get("/api/device/:deviceId/bodytemp", async (req, res) => {
     const tempRecords = history.filter(r => r.bodyTemp > 0);
 
     const series = tempRecords.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       value: r.bodyTemp
     }));
 
@@ -347,13 +340,13 @@ app.get("/api/device/:deviceId/bodytemp", async (req, res) => {
 
     res.json({
       deviceId,
-      date: tempRecords.length ? tempRecords[tempRecords.length - 1].timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: tempRecords.length ? istDate(tempRecords[tempRecords.length - 1].timestamp) : istDate(new Date()),
       series,
       average,
       max,
       min,
       warningRecords: tempRecords.filter(r => r.bodyTemp > 37.5 || r.bodyTemp < 35.5).map(r => ({
-        time: r.timestamp.toLocaleString(),
+        time: istDateTime(r.timestamp),
         value: r.bodyTemp
       }))
     });
@@ -369,7 +362,7 @@ app.get("/api/device/:deviceId/hearthealth", async (req, res) => {
     const hrvRecords = history.filter(r => r.hrv > 0);
 
     const series = hrvRecords.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       value: r.hrv
     }));
 
@@ -388,7 +381,7 @@ app.get("/api/device/:deviceId/hearthealth", async (req, res) => {
 
     res.json({
       deviceId,
-      date: hrvRecords.length ? hrvRecords[hrvRecords.length - 1].timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: hrvRecords.length ? istDate(hrvRecords[hrvRecords.length - 1].timestamp) : istDate(new Date()),
       diagnosis,
       afibRisk,
       hrvScore: average,
@@ -407,9 +400,9 @@ app.get("/api/device/:deviceId/ecg", async (req, res) => {
 
     res.json({
       deviceId,
-      date: ecgRecords.length ? ecgRecords[ecgRecords.length - 1].timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: ecgRecords.length ? istDate(ecgRecords[ecgRecords.length - 1].timestamp) : istDate(new Date()),
       records: ecgRecords.map(r => ({
-        time: r.timestamp.toLocaleString(),
+        time: istDateTime(r.timestamp),
         wave: r.ecgRecords
       })),
       aiResult: ecgRecords.length ? "Normal sinus rhythm detected from device recordings." : "No active ECG recordings uploaded from device."
@@ -426,7 +419,7 @@ app.get("/api/device/:deviceId/pressure", async (req, res) => {
     const stressRecords = history.filter(r => r.stress > 0);
 
     const series = stressRecords.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       value: r.stress
     }));
 
@@ -436,7 +429,7 @@ app.get("/api/device/:deviceId/pressure", async (req, res) => {
 
     res.json({
       deviceId,
-      date: stressRecords.length ? stressRecords[stressRecords.length - 1].timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: stressRecords.length ? istDate(stressRecords[stressRecords.length - 1].timestamp) : istDate(new Date()),
       series,
       average,
       level
@@ -453,7 +446,7 @@ app.get("/api/device/:deviceId/bloodsugar", async (req, res) => {
     const sugarRecords = history.filter(r => r.bloodSugar > 0);
 
     const series = sugarRecords.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       value: r.bloodSugar
     }));
 
@@ -464,7 +457,7 @@ app.get("/api/device/:deviceId/bloodsugar", async (req, res) => {
 
     res.json({
       deviceId,
-      date: sugarRecords.length ? sugarRecords[sugarRecords.length - 1].timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: sugarRecords.length ? istDate(sugarRecords[sugarRecords.length - 1].timestamp) : istDate(new Date()),
       series,
       average,
       max,
@@ -483,7 +476,7 @@ app.get("/api/device/:deviceId/bloodketone", async (req, res) => {
     const ketoneRecords = history.filter(r => r.bloodKetone > 0);
 
     const series = ketoneRecords.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       value: r.bloodKetone
     }));
 
@@ -492,7 +485,7 @@ app.get("/api/device/:deviceId/bloodketone", async (req, res) => {
 
     res.json({
       deviceId,
-      date: ketoneRecords.length ? ketoneRecords[ketoneRecords.length - 1].timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: ketoneRecords.length ? istDate(ketoneRecords[ketoneRecords.length - 1].timestamp) : istDate(new Date()),
       series,
       average,
       unit: "mmol/L",
@@ -510,7 +503,7 @@ app.get("/api/device/:deviceId/uricacid", async (req, res) => {
     const uricRecords = history.filter(r => r.uricAcid > 0);
 
     const series = uricRecords.map(r => ({
-      time: r.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: istTime(r.timestamp),
       value: r.uricAcid
     }));
 
@@ -519,7 +512,7 @@ app.get("/api/device/:deviceId/uricacid", async (req, res) => {
 
     res.json({
       deviceId,
-      date: uricRecords.length ? uricRecords[uricRecords.length - 1].timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: uricRecords.length ? istDate(uricRecords[uricRecords.length - 1].timestamp) : istDate(new Date()),
       series,
       average,
       unit: "μmol/L",
@@ -540,14 +533,14 @@ app.get("/api/device/:deviceId/locationtrack", async (req, res) => {
     const tracks = locationRecords.map(r => ({
       lat: r.location.lat,
       lng: r.location.lng,
-      time: r.timestamp.toLocaleString()
+      time: istDateTime(r.timestamp)
     }));
 
     const lastLocation = tracks.length ? { lat: tracks[tracks.length - 1].lat, lng: tracks[tracks.length - 1].lng } : null;
 
     res.json({
       deviceId,
-      date: locationRecords.length ? locationRecords[locationRecords.length - 1].timestamp.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      date: locationRecords.length ? istDate(locationRecords[locationRecords.length - 1].timestamp) : istDate(new Date()),
       tracks,
       lastLocation
     });
@@ -558,24 +551,39 @@ app.get("/api/device/:deviceId/locationtrack", async (req, res) => {
 
 // ─── ALARM LIST ───────────────────────────────────────────
 
-app.get("/api/alarms", (req, res) => {
-  res.json([
-    { id: 1,  nickname: "Ayen",        deviceId: "863758060992848", type: "Not worn",          time: "2026-05-11 10:46:00", location: "", content: "The watch has detected that it is not worn." },
-    { id: 2,  nickname: "",            deviceId: "863758060992848", type: "Not worn",          time: "2026-05-11 09:55:59", location: "", content: "The watch has detected that it is not worn." },
-    { id: 3,  nickname: "",            deviceId: "863758060992848", type: "Not worn",          time: "2026-05-11 08:16:01", location: "", content: "The watch has detected that it is not worn." },
-    { id: 4,  nickname: "Bruni",       deviceId: "861045080003026", type: "Not worn",          time: "2026-05-11 07:30:01", location: "", content: "The watch has detected that it is not worn." },
-    { id: 5,  nickname: "Wolli",       deviceId: "861045080059689", type: "Sleep",             time: "2026-05-11 06:53:00", location: "", content: "The watch has entered the sleep mode." },
-    { id: 6,  nickname: "",            deviceId: "861045080003026", type: "Not worn",          time: "2026-05-11 06:50:01", location: "", content: "The watch has detected that it is not worn." },
-    { id: 7,  nickname: "Mama",        deviceId: "863957077864525", type: "Not worn",          time: "2026-05-11 06:28:01", location: "", content: "The watch has detected that it is not worn." },
-    { id: 8,  nickname: "Mutter",      deviceId: "861045080041505", type: "Sleep",             time: "2026-05-11 06:27:00", location: "", content: "The watch has entered the sleep mode." },
-    { id: 9,  nickname: "Reloj Ángel", deviceId: "862688076415040", type: "Sleep",             time: "2026-05-11 06:26:00", location: "", content: "The watch has entered the sleep mode." },
-    { id: 10, nickname: "",            deviceId: "862688076415040", type: "Heart rate warning", time: "2026-05-11 06:11:00", location: "", content: "The watch has detected a heart rate warning." },
-  ]);
+app.get("/api/alarms", async (req, res) => {
+  try {
+    const snapshot = await db.collection("alarms").get();
+    const alarms = snapshot.docs.map(doc => {
+      const d = doc.data();
+      let time = "";
+      if (d.time) {
+        time = d.time.toDate ? istDateTime(d.time.toDate()) : String(d.time);
+      } else if (d.receivedAt) {
+        time = d.receivedAt.toDate ? istDateTime(d.receivedAt.toDate()) : String(d.receivedAt);
+      } else if (d.timestamp) {
+        time = istDateTime(new Date(d.timestamp));
+      }
+      return {
+        id: doc.id,
+        nickname: d.nickname || "",
+        deviceId: d.deviceId || d.device_id || "",
+        type: d.type || "",
+        time,
+        location: d.location || "",
+        content: d.content || ""
+      };
+    });
+    alarms.sort((a, b) => new Date(b.time) - new Date(a.time));
+    res.json(alarms);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── ROOT ─────────────────────────────────────────────────
 
-app.get("/", (req, res) => res.send("API is running 🚀"));
+app.get("/", (req, res) => res.send("API is running"));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
