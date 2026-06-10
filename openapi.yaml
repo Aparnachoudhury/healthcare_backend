@@ -1,0 +1,618 @@
+openapi: 3.0.0
+info:
+  title: Stealthera API
+  description: >-
+    ## System Architecture
+
+
+    ```
+
+    ┌──────────────┐        ┌───────────────────┐       
+    ┌────────────────┐        ┌─────────────────────┐
+
+    │              │        │                   │        │               
+    │        │                     │
+
+    │   Wearable   │──────▶ │  Stealthera Cloud │──────▶ │   Client API  
+    │──────▶ │  Client Platform    │
+
+    │   Device     │        │                   │        │               
+    │        │                     │
+
+    └──────────────┘        └───────────────────┘       
+    └────────────────┘        └─────────────────────┘
+         Stealthera Device                  Firebase / Node              REST Endpoints          Hospital Apps / HIS /
+       Smartwatch                  Backend                  (This Document)         EMR / Cloud Infra
+    ```
+
+
+    Stealthera exposes standardized APIs which can be consumed by hospital
+    applications, HIS platforms, EMR systems, or client-hosted cloud
+    infrastructure.
+
+
+    ---
+
+
+    ## Overview
+
+
+    This backend receives data from Stealthera Device smartwatches and exposes
+    endpoints for the health dashboard frontend.
+
+
+    **Base URL:** `http://localhost:3000`
+
+
+    **Device ID Example:** `863758060992848`
+
+
+    ---
+
+
+    ### Endpoint Groups
+
+    - **Watch Upload** — binary data posted by the watch firmware
+
+    - **Health Data** — aggregated live device list
+
+    - **Device Detail** — per-device health metrics (heart rate, sleep, blood
+    pressure, etc.)
+
+    - **Alarms** — event / alert log
+
+
+    ---
+
+
+    ## Note
+
+
+    This document represents the current **v1 API specification**.
+
+
+    Future versions will include:
+
+    - Enhanced authentication and authorization
+
+    - Device-to-patient mapping workflows
+
+    - Expanded monitoring and audit capabilities
+
+    - Advanced integration and interoperability features
+  version: 1.0.0
+servers:
+  - url: https://api.stealthera.in
+tags:
+  - name: Health Check
+  - name: Watch Upload
+  - name: Health Data
+  - name: Device Detail
+  - name: Alarms
+paths:
+  /:
+    get:
+      tags:
+        - Health Check
+      summary: Root — API Status
+      description: >-
+        Simple health-check endpoint. Returns a plain-text confirmation that the
+        API server is running.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /4g/pb/upload:
+    post:
+      tags:
+        - Watch Upload
+      summary: Upload Watch Data (binary)
+      description: >-
+        Receives a binary protobuf payload from an Stealthera Device smartwatch
+        and persists it to Firestore.
+
+
+        **Collections written:**
+
+        - `live_devices` (keyed by `device_id`) — latest snapshot
+
+        - `healthData` — append-only log with `receivedAt` timestamp
+
+
+        **Response:** A single raw `0x00` byte (`application/octet-stream`). The
+        Stealthera Device test tool validates exactly this byte — do not change
+        the response format.
+
+
+        **Expected parsed payload fields (decoded.data):**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `device_id` | string | Device IMEI |
+
+        | `heart_rate_bpm` | number | Beats per minute |
+
+        | `spo2_percent` | number | Blood oxygen % |
+
+        | `body_temperature_c` | number | Body temp in °C |
+
+        | `steps` | number | Step count |
+
+        | `phone_number` | string | Associated phone number |
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              example: ''
+      parameters:
+        - name: Content-Type
+          in: header
+          schema:
+            type: string
+          description: Must be octet-stream — the watch firmware sends a raw binary payload
+          example: application/octet-stream
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/health-data:
+    get:
+      tags:
+        - Health Data
+      summary: Get All Devices — Live Health Data
+      description: >-
+        Returns a list of all registered devices with their latest health
+        metrics pulled from the `live_devices` Firestore collection.
+
+
+        **Response fields per device:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `id` | string | Device ID |
+
+        | `nickname` | string | Human-readable label (defaults to device ID or
+        "Stealthera Device") |
+
+        | `model` | string | Device model (default: `H102CSH`) |
+
+        | `deviceId` | string | IMEI / device identifier |
+
+        | `status` | string | Online / Offline |
+
+        | `steps` | number | Current step count |
+
+        | `heartRate` | number | Heart rate in BPM |
+
+        | `bloodOxygen` | number | SpO2 percentage |
+
+        | `bodyTemp` | number | Body temperature in °C |
+
+        | `phone` | string | Associated phone number |
+
+        | `updateTime` | string | Timestamp of last update |
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/overview:
+    get:
+      tags:
+        - Device Detail
+      summary: Overview
+      description: |-
+        Returns a daily summary snapshot for a specific device.
+
+        **Path parameter:**
+        - `deviceId` — Device IMEI
+
+        **Response fields:**
+        | Field | Type | Description |
+        |---|---|---|
+        | `deviceId` | string | Device IMEI |
+        | `date` | string | Summary date (YYYY-MM-DD) |
+        | `steps` | number | Step count |
+        | `heartRate` | number | BPM |
+        | `bloodOxygen` | number | SpO2 % |
+        | `bodyTemp` | number | °C |
+        | `sleepHours` | number | Total sleep hours |
+        | `bloodPressure.systolic` | number | mmHg |
+        | `bloodPressure.diastolic` | number | mmHg |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/heartrate:
+    get:
+      tags:
+        - Device Detail
+      summary: Heart Rate
+      description: >-
+        Returns real-time heart rate data for the device from Firestore
+        (`live_devices` collection).
+
+
+        If the device does not exist in Firestore, returns empty series with
+        zero values.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `series` | array | `[{ time: string, value: number }]` — one entry per
+        reading |
+
+        | `average` | number | Average BPM |
+
+        | `max` | number | Maximum BPM |
+
+        | `min` | number | Minimum BPM |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/sleep:
+    get:
+      tags:
+        - Device Detail
+      summary: Sleep
+      description: >-
+        Returns sleep analysis data for the device.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `totalMinutes` | number | Total sleep in minutes |
+
+        | `series` | array | `[{ time: string, stage: 0\|1\|2 }]` — 0=awake,
+        1=light, 2=deep |
+
+        | `deepSleepMinutes` | number | Deep sleep duration |
+
+        | `lightSleepMinutes` | number | Light sleep duration |
+
+        | `awakeTimes` | number | Number of wake events |
+
+        | `sleepScore` | number | Score 0–100 |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/bloodpressure:
+    get:
+      tags:
+        - Device Detail
+      summary: Blood Pressure
+      description: >-
+        Returns 24-hour blood pressure time series for the device.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `series` | array | `[{ time: string, systolic: number, diastolic:
+        number }]` — 24 hourly readings |
+
+        | `avgSystolic` | number | Average systolic mmHg |
+
+        | `avgDiastolic` | number | Average diastolic mmHg |
+
+        | `warningRecords` | array | Records that exceeded safe thresholds |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/bloodoxygen:
+    get:
+      tags:
+        - Device Detail
+      summary: Blood Oxygen (SpO2)
+      description: >-
+        Returns real-time blood oxygen (SpO2) data from Firestore.
+
+
+        If the device does not exist in Firestore, returns empty series with
+        zero values.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `series` | array | `[{ time: string, value: number }]` |
+
+        | `average` | number | Average SpO2 % |
+
+        | `max` | number | Max SpO2 % |
+
+        | `min` | number | Min SpO2 % |
+
+        | `warningRecords` | array | Readings below safe threshold |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/bodytemp:
+    get:
+      tags:
+        - Device Detail
+      summary: Body Temperature
+      description: >-
+        Returns real-time body temperature data from Firestore.
+
+
+        If the device has no temperature reading, `series` is empty and all
+        numeric fields are `0`.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `series` | array | `[{ time: string, value: number }]` — value in °C |
+
+        | `average` | number | Average temperature °C |
+
+        | `max` | number | Max temperature °C |
+
+        | `min` | number | Min temperature °C |
+
+        | `warningRecords` | array | Readings outside normal range |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/hearthealth:
+    get:
+      tags:
+        - Device Detail
+      summary: Heart Health (HRV / AFib)
+      description: >-
+        Returns heart health analysis including HRV score and AFib risk
+        assessment.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `diagnosis` | string | Plain-text AI diagnosis summary |
+
+        | `afibRisk` | string | AFib risk level: `Low` / `Medium` / `High` |
+
+        | `hrvScore` | number | Heart Rate Variability score (0–100) |
+
+        | `series` | array | `[{ time: string, value: number }]` — 24 hourly
+        readings |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/ecg:
+    get:
+      tags:
+        - Device Detail
+      summary: ECG
+      description: >-
+        Returns ECG records and AI interpretation for the device.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `records` | array | ECG measurement records (empty if no readings
+        taken) |
+
+        | `aiResult` | string | AI-generated ECG interpretation |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/pressure:
+    get:
+      tags:
+        - Device Detail
+      summary: Stress / Pressure
+      description: >-
+        Returns stress/pressure index data for the device.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `series` | array | `[{ time: string, value: number }]` — 24 hourly
+        readings, scale 0–100 |
+
+        | `average` | number | Average stress index |
+
+        | `level` | string | Overall level: `Low` / `Normal` / `High` |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/device/{deviceId}/locationtrack:
+    get:
+      tags:
+        - Device Detail
+      summary: Location Track
+      description: >-
+        Returns GPS location track history for the device.
+
+
+        `tracks` and `lastLocation` are currently empty / null while location
+        features are under development.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `tracks` | array | Array of `{ lat, lng, time }` GPS points |
+
+        | `lastLocation` | object\|null | Most recent GPS fix, or `null` |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
+  /api/alarms:
+    get:
+      tags:
+        - Alarms
+      summary: Get Alarm List
+      description: |-
+        Returns the full alarm / event log across all devices.
+
+        **Alarm types:**
+        - `Not worn` — watch detected it is not being worn
+        - `Sleep` — watch entered sleep mode
+        - `Heart rate warning` — heart rate exceeded safe threshold
+
+        **Response fields per alarm:**
+        | Field | Type | Description |
+        |---|---|---|
+        | `id` | number | Unique alarm ID |
+        | `nickname` | string | Device owner nickname (may be empty) |
+        | `deviceId` | string | Device IMEI |
+        | `type` | string | Alarm type |
+        | `time` | string | Timestamp (YYYY-MM-DD HH:mm:ss) |
+        | `location` | string | GPS location string (empty if unavailable) |
+        | `content` | string | Human-readable alarm description |
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json: {}
