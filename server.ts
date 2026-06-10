@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+﻿import express, { Request, Response } from "express";
 import cors from "cors";
 import db from "./firebase.js";
 
@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.raw({ type: "application/octet-stream" }));
 
-// ─── IST HELPERS ──────────────────────────────────────────
+// â”€â”€â”€ IST HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const IST = { timeZone: "Asia/Kolkata" };
 
 function istTime(date: Date): string {
@@ -22,7 +22,7 @@ function istDate(date: Date): string {
   return date.toLocaleDateString("en-CA", IST);
 }
 
-// ─── TYPES ────────────────────────────────────────────────
+// â”€â”€â”€ TYPES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface HealthRecord {
   timestamp: Date;
   steps: number;
@@ -41,7 +41,7 @@ interface HealthRecord {
   ecgRecords: number[];
 }
 
-// ─── FIRESTORE HEALTH DATA HISTORY UTILITY ────────────────
+// â”€â”€â”€ FIRESTORE HEALTH DATA HISTORY UTILITY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getDeviceHealthHistory(deviceId: string): Promise<HealthRecord[]> {
   const snapshot = await db.collection("healthData").get();
   const records: HealthRecord[] = [];
@@ -101,7 +101,7 @@ async function getDeviceHealthHistory(deviceId: string): Promise<HealthRecord[]>
   return records;
 }
 
-// ─── WATCH UPLOAD ─────────────────────────────────────────
+// â”€â”€â”€ WATCH UPLOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function sendWatchAck(res: Response): void {
   const buf = Buffer.from([0x00]);
   res.statusCode = 200;
@@ -123,7 +123,7 @@ app.post("/4g/pb/upload", async (req: Request, res: Response) => {
   }
 });
 
-// ─── HEALTH DATA ─────────────────────────────────────────
+// â”€â”€â”€ HEALTH DATA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get("/api/health-data", async (_req: Request, res: Response) => {
   try {
     const snapshot = await db.collection("live_devices").get();
@@ -157,10 +157,10 @@ app.get("/api/health-data", async (_req: Request, res: Response) => {
   }
 });
 
-// ─── DEVICE DETAIL TABS ──────────────────────────────────
+// â”€â”€â”€ DEVICE DETAIL TABS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get("/api/device/:deviceId/overview", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     let latest: Partial<HealthRecord> & { timestamp?: Date } = {};
     if (history.length > 0) {
@@ -199,7 +199,7 @@ app.get("/api/device/:deviceId/overview", async (req: Request, res: Response) =>
 
 app.get("/api/device/:deviceId/heartrate", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.heartRate > 0);
     const values = records.map(r => r.heartRate);
@@ -215,7 +215,7 @@ app.get("/api/device/:deviceId/heartrate", async (req: Request, res: Response) =
 
 app.get("/api/device/:deviceId/sleep", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.sleepHours > 0);
     const latest = records.length ? records[records.length - 1] : null;
@@ -235,7 +235,7 @@ app.get("/api/device/:deviceId/sleep", async (req: Request, res: Response) => {
 
 app.get("/api/device/:deviceId/bloodpressure", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.systolic > 0 && r.diastolic > 0);
     const s = records.map(r => r.systolic), d = records.map(r => r.diastolic);
@@ -252,7 +252,7 @@ app.get("/api/device/:deviceId/bloodpressure", async (req: Request, res: Respons
 
 app.get("/api/device/:deviceId/bloodoxygen", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.spo2 > 0);
     const values = records.map(r => r.spo2);
@@ -269,7 +269,7 @@ app.get("/api/device/:deviceId/bloodoxygen", async (req: Request, res: Response)
 
 app.get("/api/device/:deviceId/bodytemp", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.bodyTemp > 0);
     const values = records.map(r => r.bodyTemp);
@@ -287,7 +287,7 @@ app.get("/api/device/:deviceId/bodytemp", async (req: Request, res: Response) =>
 
 app.get("/api/device/:deviceId/hearthealth", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.hrv > 0);
     const values = records.map(r => r.hrv);
@@ -305,7 +305,7 @@ app.get("/api/device/:deviceId/hearthealth", async (req: Request, res: Response)
 
 app.get("/api/device/:deviceId/ecg", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.ecgRecords && r.ecgRecords.length > 0);
     res.json({
@@ -319,7 +319,7 @@ app.get("/api/device/:deviceId/ecg", async (req: Request, res: Response) => {
 
 app.get("/api/device/:deviceId/pressure", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.stress > 0);
     const values = records.map(r => r.stress);
@@ -336,7 +336,7 @@ app.get("/api/device/:deviceId/pressure", async (req: Request, res: Response) =>
 
 app.get("/api/device/:deviceId/bloodsugar", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.bloodSugar > 0);
     const values = records.map(r => r.bloodSugar);
@@ -354,7 +354,7 @@ app.get("/api/device/:deviceId/bloodsugar", async (req: Request, res: Response) 
 
 app.get("/api/device/:deviceId/bloodketone", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.bloodKetone > 0);
     const values = records.map(r => r.bloodKetone);
@@ -371,7 +371,7 @@ app.get("/api/device/:deviceId/bloodketone", async (req: Request, res: Response)
 
 app.get("/api/device/:deviceId/uricacid", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.uricAcid > 0);
     const values = records.map(r => r.uricAcid);
@@ -380,16 +380,16 @@ app.get("/api/device/:deviceId/uricacid", async (req: Request, res: Response) =>
       date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
       series: records.map(r => ({ time: istTime(r.timestamp), value: r.uricAcid })),
       average: values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0,
-      unit: "μmol/L",
-      maleStandard: "<420μmol/L",
-      femaleStandard: "<360μmol/L",
+      unit: "Î¼mol/L",
+      maleStandard: "<420Î¼mol/L",
+      femaleStandard: "<360Î¼mol/L",
     });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 app.get("/api/device/:deviceId/locationtrack", async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
     const records = history.filter(r => r.location && typeof r.location.lat === "number" && typeof r.location.lng === "number");
     const tracks = records.map(r => ({ lat: r.location!.lat, lng: r.location!.lng, time: istDateTime(r.timestamp) }));
@@ -402,7 +402,7 @@ app.get("/api/device/:deviceId/locationtrack", async (req: Request, res: Respons
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── ALARM LIST ───────────────────────────────────────────
+// â”€â”€â”€ ALARM LIST â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get("/api/alarms", async (_req: Request, res: Response) => {
   try {
     const snapshot = await db.collection("alarms").get();
@@ -419,8 +419,9 @@ app.get("/api/alarms", async (_req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── ROOT ─────────────────────────────────────────────────
+// â”€â”€â”€ ROOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get("/", (_req: Request, res: Response) => res.send("API is running"));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+
