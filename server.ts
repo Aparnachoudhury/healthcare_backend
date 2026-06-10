@@ -43,7 +43,10 @@ interface HealthRecord {
 
 // â”€â”€â”€ FIRESTORE HEALTH DATA HISTORY UTILITY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getDeviceHealthHistory(deviceId: string): Promise<HealthRecord[]> {
-  const snapshot = await db.collection("healthData").get();
+  const snapshot = await db.collection("healthData")
+    .where("device_id", "==", deviceId)
+    .limit(200)
+    .get();
   const records: HealthRecord[] = [];
 
   snapshot.forEach(doc => {
@@ -63,9 +66,6 @@ async function getDeviceHealthHistory(deviceId: string): Promise<HealthRecord[]>
         }
       } catch { /* ignore */ }
     }
-
-    const recDeviceId = payload.device_id || d.device_id || "";
-    if (recDeviceId.toString() !== deviceId.toString()) return;
 
     let timestamp = new Date();
     if (d.receivedAt) {
