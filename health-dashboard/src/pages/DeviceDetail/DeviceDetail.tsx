@@ -1,5 +1,7 @@
-import { useState, ReactElement } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
+import { getVitals, getWellness, getDiagnostics, getSafety } from "../../api/api";
+import type { VitalsData, WellnessData, DiagnosticsData, SafetyData } from "../../types";
 import Overview from "./Overview";
 import HeartRate from "./HeartRate";
 import Sleep from "./Sleep";
@@ -17,27 +19,50 @@ import UricAcid from "./UricAcid";
 const tabs = ["Overview","Exercise","Heart Rate","Sleep","Blood Pressure","Blood Oxygen","Body Temperature","Heart Health","ECG"];
 const moreTabs = ["Pressure Value","Location Track","blood sugar","Blood Ketone","Uric Acid"];
 
-const tabComponents: Record<string, ReactElement> = {
-  "Overview":          <Overview />,
-  "Exercise":          <Overview />,
-  "Heart Rate":        <HeartRate />,
-  "Sleep":             <Sleep />,
-  "Blood Pressure":    <BloodPressure />,
-  "Blood Oxygen":      <BloodOxygen />,
-  "Body Temperature":  <BodyTemp />,
-  "Heart Health":      <HeartHealth />,
-  "ECG":               <ECG />,
-  "Pressure Value":    <PressureValue />,
-  "Location Track":    <LocationTrack />,
-  "blood sugar":       <BloodSugar />,
-  "Blood Ketone":      <BloodKetone />,
-  "Uric Acid":         <UricAcid />,
-};
-
 const DeviceDetail = () => {
   const { id } = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState("Overview");
   const [showMore,  setShowMore]  = useState(false);
+
+  const [vitals,      setVitals]      = useState<VitalsData | null>(null);
+  const [wellness,    setWellness]    = useState<WellnessData | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsData | null>(null);
+  const [safety,      setSafety]      = useState<SafetyData | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    Promise.all([
+      getVitals(id),
+      getWellness(id),
+      getDiagnostics(id),
+      getSafety(id),
+    ]).then(([v, w, d, s]) => {
+      setVitals(v);
+      setWellness(w);
+      setDiagnostics(d);
+      setSafety(s);
+    }).catch(err => console.error(err));
+  }, [id]);
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case "Overview":          return <Overview      data={wellness?.overview} />;
+      case "Exercise":          return <Overview      data={wellness?.overview} />;
+      case "Heart Rate":        return <HeartRate     data={vitals?.heartrate} />;
+      case "Sleep":             return <Sleep         data={wellness?.sleep} />;
+      case "Blood Pressure":    return <BloodPressure data={vitals?.bloodpressure} />;
+      case "Blood Oxygen":      return <BloodOxygen   data={vitals?.bloodoxygen} />;
+      case "Body Temperature":  return <BodyTemp      data={vitals?.bodytemp} />;
+      case "Heart Health":      return <HeartHealth   data={wellness?.hearthealth} />;
+      case "ECG":               return <ECG           data={diagnostics?.ecg} />;
+      case "Pressure Value":    return <PressureValue data={wellness?.pressure} />;
+      case "Location Track":    return <LocationTrack data={safety?.locationtrack} />;
+      case "blood sugar":       return <BloodSugar />;
+      case "Blood Ketone":      return <BloodKetone />;
+      case "Uric Acid":         return <UricAcid />;
+      default:                  return null;
+    }
+  };
 
   return (
     <div style={{ display: "flex", gap: "20px" }}>
@@ -88,7 +113,7 @@ const DeviceDetail = () => {
           )}
         </div>
         <div style={{ background: "#fff", borderRadius: "8px", padding: "20px" }}>
-          {tabComponents[activeTab]}
+          {renderTab()}
         </div>
       </div>
     </div>

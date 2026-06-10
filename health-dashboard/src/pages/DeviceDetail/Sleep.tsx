@@ -1,20 +1,10 @@
-import { useEffect, useState } from "react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { useParams } from "react-router-dom";
-import { getSleep } from "../../api/api";
 import type { SleepData } from "../../types";
 
-const Sleep = () => {
-  const { id } = useParams<{ id: string }>();
-  const [data, setData]       = useState<SleepData | null>(null);
-  const [loading, setLoading] = useState(true);
+interface Props { data?: SleepData }
 
-  useEffect(() => {
-    getSleep(id!).then(setData).catch(err => console.log(err)).finally(() => setLoading(false));
-  }, [id]);
-
-  if (loading) return <div>Loading...</div>;
-  if (!data)   return <div>No sleep data available</div>;
+const Sleep = ({ data }: Props) => {
+  if (!data) return <div>Loading...</div>;
 
   return (
     <div>

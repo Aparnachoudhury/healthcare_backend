@@ -1,19 +1,10 @@
-import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { useParams } from "react-router-dom";
-import { getBloodOxygen } from "../../api/api";
 import type { BloodOxygenData } from "../../types";
 
-const BloodOxygen = () => {
-  const { id } = useParams<{ id: string }>();
-  const [data, setData] = useState<BloodOxygenData>({ deviceId: "", date: "", series: [], average: 0, max: 0, min: 0, warningRecords: [] });
-  const [loading, setLoading] = useState(true);
+interface Props { data?: BloodOxygenData }
 
-  useEffect(() => {
-    getBloodOxygen(id!).then(setData).catch(err => console.log(err)).finally(() => setLoading(false));
-  }, [id]);
-
-  if (loading) return <div>Loading...</div>;
+const BloodOxygen = ({ data }: Props) => {
+  if (!data) return <div>Loading...</div>;
 
   return (
     <div>

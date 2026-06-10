@@ -1,4 +1,8 @@
-const Overview = () => (
+import type { OverviewData } from "../../types";
+
+interface Props { data?: OverviewData }
+
+const Overview = (_props: Props) => (
   <div>
     <h3 style={{ marginBottom: "16px", fontSize: "15px" }}>📊 Data Overview <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>2026-05-11</span></h3>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>

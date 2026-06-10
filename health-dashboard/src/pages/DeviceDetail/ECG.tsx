@@ -1,4 +1,8 @@
-const ECG = () => (
+import type { EcgData } from "../../types";
+
+interface Props { data?: EcgData }
+
+const ECG = (_props: Props) => (
   <div>
     <h3 style={{ marginBottom: "8px", fontSize: "15px" }}>📈 ECG <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>2026-05-11</span></h3>
     <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "16px" }}>Gyro: 10 mm/mv · Movement speed: 25mm/s</p>

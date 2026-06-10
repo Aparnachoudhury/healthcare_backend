@@ -1,19 +1,10 @@
-import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { useParams } from "react-router-dom";
-import { getBodyTemp } from "../../api/api";
 import type { BodyTempData } from "../../types";
 
-const BodyTemp = () => {
-  const { id } = useParams<{ id: string }>();
-  const [data, setData] = useState<BodyTempData>({ deviceId: "", date: "", series: [], average: 0, max: 0, min: 0, warningRecords: [] });
-  const [loading, setLoading] = useState(true);
+interface Props { data?: BodyTempData }
 
-  useEffect(() => {
-    getBodyTemp(id!).then(setData).catch(err => console.log(err)).finally(() => setLoading(false));
-  }, [id]);
-
-  if (loading) return <div>Loading...</div>;
+const BodyTemp = ({ data }: Props) => {
+  if (!data) return <div>Loading...</div>;
 
   return (
     <div>

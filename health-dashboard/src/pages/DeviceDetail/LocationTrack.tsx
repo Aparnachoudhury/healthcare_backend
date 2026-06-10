@@ -1,4 +1,8 @@
-const LocationTrack = () => (
+import type { LocationData } from "../../types";
+
+interface Props { data?: LocationData }
+
+const LocationTrack = (_props: Props) => (
   <div>
     <h3 style={{ marginBottom: "16px", fontSize: "15px" }}>
       📍 Historical track <span style={{ fontSize: "12px", color: "var(--text-muted)", marginLeft: "12px" }}>2026-05-11</span>

@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.raw({ type: "application/octet-stream" }));
 
-// â”€â”€â”€ IST HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ IST HELPERS â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 const IST = { timeZone: "Asia/Kolkata" };
 
 function istTime(date: Date): string {
@@ -22,7 +22,7 @@ function istDate(date: Date): string {
   return date.toLocaleDateString("en-CA", IST);
 }
 
-// â”€â”€â”€ TYPES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ TYPES â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 interface HealthRecord {
   timestamp: Date;
   steps: number;
@@ -41,7 +41,24 @@ interface HealthRecord {
   ecgRecords: number[];
 }
 
-// â”€â”€â”€ FIRESTORE HEALTH DATA HISTORY UTILITY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ FIRESTORE HEALTH DATA HISTORY UTILITY â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+async function getLiveDeviceFallback(deviceId: string): Promise<Partial<HealthRecord> | null> {
+  const liveDoc = await db.collection("live_devices").doc(deviceId).get();
+  if (!liveDoc.exists) return null;
+  const d = liveDoc.data() as Record<string, any>;
+  const inner = d?.decoded?.data || d || {};
+  return {
+    timestamp: new Date(),
+    steps:      inner.steps ?? 0,
+    heartRate:  inner.heart_rate_bpm ?? inner.heart_rate ?? 0,
+    spo2:       inner.spo2_percent ?? inner.spo2 ?? 0,
+    bodyTemp:   inner.body_temperature_c ?? inner.temperature ?? 0,
+    sleepHours: inner.sleep_hours ?? 0,
+    systolic:   inner.bp_systolic_mmhg ?? inner.systolic ?? 0,
+    diastolic:  inner.bp_diastolic_mmhg ?? inner.diastolic ?? 0,
+  };
+}
+
 async function getDeviceHealthHistory(deviceId: string): Promise<HealthRecord[]> {
   const snapshot = await db.collection("healthData")
     .where("device_id", "==", deviceId)
@@ -101,7 +118,183 @@ async function getDeviceHealthHistory(deviceId: string): Promise<HealthRecord[]>
   return records;
 }
 
-// â”€â”€â”€ WATCH UPLOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── TAB BUILDER FUNCTIONS ─────────────────────────────────────
+// Each builder is a pure function: takes pre-loaded history, returns the
+// same shape as its corresponding endpoint. Existing endpoints delegate
+// here; the /dashboard endpoint calls all of them after one Firestore read.
+
+function buildOverview(deviceId: string, history: HealthRecord[], liveFallback?: Partial<HealthRecord> | null) {
+  const latest: Partial<HealthRecord> = history.length > 0 ? history[history.length - 1] : (liveFallback ?? {});
+  return {
+    deviceId,
+    date: latest.timestamp ? istDate(latest.timestamp) : istDate(new Date()),
+    steps: latest.steps || 0,
+    heartRate: latest.heartRate || 0,
+    bloodOxygen: latest.spo2 || 0,
+    bodyTemp: latest.bodyTemp || 0,
+    sleepHours: latest.sleepHours || 0,
+    bloodPressure: { systolic: latest.systolic || 0, diastolic: latest.diastolic || 0 },
+  };
+}
+
+function buildHeartRate(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.heartRate > 0);
+  const values = records.map(r => r.heartRate);
+  return {
+    deviceId,
+    series: records.map(r => ({ time: istTime(r.timestamp), value: r.heartRate })),
+    average: values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0,
+    max: values.length ? Math.max(...values) : 0,
+    min: values.length ? Math.min(...values) : 0,
+  };
+}
+
+function buildSleep(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.sleepHours > 0);
+  const latest = records.length ? records[records.length - 1] : null;
+  const totalMinutes = latest ? Math.round(latest.sleepHours * 60) : 0;
+  return {
+    deviceId,
+    date: latest ? istDate(latest.timestamp) : istDate(new Date()),
+    totalMinutes,
+    series: records.map(r => ({ time: istTime(r.timestamp), stage: r.sleepHours > 6 ? 2 : r.sleepHours > 4 ? 1 : 0 })),
+    deepSleepMinutes: Math.round(totalMinutes * 0.3),
+    lightSleepMinutes: Math.round(totalMinutes * 0.7),
+    awakeTimes: latest ? 1 : 0,
+    sleepScore: totalMinutes > 480 ? 90 : totalMinutes > 360 ? 75 : totalMinutes > 0 ? 60 : 0,
+  };
+}
+
+function buildBloodPressure(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.systolic > 0 && r.diastolic > 0);
+  const s = records.map(r => r.systolic), d = records.map(r => r.diastolic);
+  return {
+    deviceId,
+    date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
+    series: records.map(r => ({ time: istTime(r.timestamp), systolic: r.systolic, diastolic: r.diastolic })),
+    avgSystolic: s.length ? Math.round(s.reduce((a, b) => a + b, 0) / s.length) : 0,
+    avgDiastolic: d.length ? Math.round(d.reduce((a, b) => a + b, 0) / d.length) : 0,
+    warningRecords: records.filter(r => r.systolic > 140 || r.diastolic > 90).map(r => ({ time: istDateTime(r.timestamp), value: `${r.systolic}/${r.diastolic}` })),
+  };
+}
+
+function buildBloodOxygen(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.spo2 > 0);
+  const values = records.map(r => r.spo2);
+  return {
+    deviceId,
+    series: records.map(r => ({ time: istTime(r.timestamp), value: r.spo2 })),
+    average: values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0,
+    max: values.length ? Math.max(...values) : 0,
+    min: values.length ? Math.min(...values) : 0,
+    warningRecords: records.filter(r => r.spo2 < 95).map(r => ({ time: istDateTime(r.timestamp), value: r.spo2 })),
+  };
+}
+
+function buildBodyTemp(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.bodyTemp > 0);
+  const values = records.map(r => r.bodyTemp);
+  return {
+    deviceId,
+    date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
+    series: records.map(r => ({ time: istTime(r.timestamp), value: r.bodyTemp })),
+    average: values.length ? parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)) : 0,
+    max: values.length ? Math.max(...values) : 0,
+    min: values.length ? Math.min(...values) : 0,
+    warningRecords: records.filter(r => r.bodyTemp > 37.5 || r.bodyTemp < 35.5).map(r => ({ time: istDateTime(r.timestamp), value: r.bodyTemp })),
+  };
+}
+
+function buildHeartHealth(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.hrv > 0);
+  const values = records.map(r => r.hrv);
+  const average = values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
+  return {
+    deviceId,
+    date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
+    diagnosis: average > 50 ? "HRV looks normal. No cardiac anomalies detected." : average > 0 ? "Low HRV detected. Consider resting or monitoring." : "No HRV data available.",
+    afibRisk: average > 50 ? "Low" : average > 0 ? "Moderate" : "Unknown",
+    hrvScore: average,
+    series: records.map(r => ({ time: istTime(r.timestamp), value: r.hrv })),
+  };
+}
+
+function buildEcg(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.ecgRecords && r.ecgRecords.length > 0);
+  return {
+    deviceId,
+    date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
+    records: records.map(r => ({ time: istDateTime(r.timestamp), wave: r.ecgRecords })),
+    aiResult: records.length ? "Normal sinus rhythm detected from device recordings." : "No active ECG recordings uploaded from device.",
+  };
+}
+
+function buildPressure(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.stress > 0);
+  const values = records.map(r => r.stress);
+  const average = values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
+  return {
+    deviceId,
+    date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
+    series: records.map(r => ({ time: istTime(r.timestamp), value: r.stress })),
+    average,
+    level: average < 30 ? "Relaxed" : average < 60 ? "Normal" : "High",
+  };
+}
+
+function buildBloodSugar(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.bloodSugar > 0);
+  const values = records.map(r => r.bloodSugar);
+  return {
+    deviceId,
+    date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
+    series: records.map(r => ({ time: istTime(r.timestamp), value: r.bloodSugar })),
+    average: values.length ? parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)) : 0,
+    max: values.length ? Math.max(...values) : 0,
+    min: values.length ? Math.min(...values) : 0,
+    unit: "mmol/L",
+  };
+}
+
+function buildBloodKetone(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.bloodKetone > 0);
+  const values = records.map(r => r.bloodKetone);
+  return {
+    deviceId,
+    date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
+    series: records.map(r => ({ time: istTime(r.timestamp), value: r.bloodKetone })),
+    average: values.length ? parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)) : 0,
+    unit: "mmol/L",
+    normalRange: "0.0~0.3mmol/L",
+  };
+}
+
+function buildUricAcid(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.uricAcid > 0);
+  const values = records.map(r => r.uricAcid);
+  return {
+    deviceId,
+    date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
+    series: records.map(r => ({ time: istTime(r.timestamp), value: r.uricAcid })),
+    average: values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0,
+    unit: "μmol/L",
+    maleStandard: "<420μmol/L",
+    femaleStandard: "<360μmol/L",
+  };
+}
+
+function buildLocationTrack(deviceId: string, history: HealthRecord[]) {
+  const records = history.filter(r => r.location && typeof r.location.lat === "number" && typeof r.location.lng === "number");
+  const tracks = records.map(r => ({ lat: r.location!.lat, lng: r.location!.lng, time: istDateTime(r.timestamp) }));
+  return {
+    deviceId,
+    date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
+    tracks,
+    lastLocation: tracks.length ? { lat: tracks[tracks.length - 1].lat, lng: tracks[tracks.length - 1].lng } : null,
+  };
+}
+
+// â"€â"€â"€ WATCH UPLOAD â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function sendWatchAck(res: Response): void {
   const buf = Buffer.from([0x00]);
   res.statusCode = 200;
@@ -123,7 +316,7 @@ app.post("/4g/pb/upload", async (req: Request, res: Response) => {
   }
 });
 
-// â”€â”€â”€ HEALTH DATA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ HEALTH DATA â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 app.get("/api/health-data", async (_req: Request, res: Response) => {
   try {
     const snapshot = await db.collection("live_devices").get();
@@ -157,252 +350,94 @@ app.get("/api/health-data", async (_req: Request, res: Response) => {
   }
 });
 
-// â”€â”€â”€ DEVICE DETAIL TABS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-app.get("/api/device/:deviceId/overview", async (req: Request, res: Response) => {
-  try {
-    const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    let latest: Partial<HealthRecord> & { timestamp?: Date } = {};
-    if (history.length > 0) {
-      latest = history[history.length - 1];
-    } else {
-      const liveDoc = await db.collection("live_devices").doc(deviceId).get();
-      if (liveDoc.exists) {
-        const d = liveDoc.data() as Record<string, any>;
-        const inner = d?.decoded?.data || d || {};
-        latest = {
-          timestamp: new Date(),
-          steps: inner.steps ?? 0,
-          heartRate: inner.heart_rate_bpm ?? inner.heart_rate ?? 0,
-          spo2: inner.spo2_percent ?? inner.spo2 ?? 0,
-          bodyTemp: inner.body_temperature_c ?? inner.temperature ?? 0,
-          sleepHours: inner.sleep_hours ?? 0,
-          systolic: inner.bp_systolic_mmhg ?? inner.systolic ?? 0,
-          diastolic: inner.bp_diastolic_mmhg ?? inner.diastolic ?? 0,
-        };
-      }
-    }
-    res.json({
-      deviceId,
-      date: latest.timestamp ? istDate(latest.timestamp) : istDate(new Date()),
-      steps: latest.steps || 0,
-      heartRate: latest.heartRate || 0,
-      bloodOxygen: (latest as HealthRecord).spo2 || 0,
-      bodyTemp: latest.bodyTemp || 0,
-      sleepHours: latest.sleepHours || 0,
-      bloodPressure: { systolic: latest.systolic || 0, diastolic: latest.diastolic || 0 },
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/api/device/:deviceId/heartrate", async (req: Request, res: Response) => {
-  try {
-    const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.heartRate > 0);
-    const values = records.map(r => r.heartRate);
-    res.json({
-      deviceId,
-      series: records.map(r => ({ time: istTime(r.timestamp), value: r.heartRate })),
-      average: values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0,
-      max: values.length ? Math.max(...values) : 0,
-      min: values.length ? Math.min(...values) : 0,
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-app.get("/api/device/:deviceId/sleep", async (req: Request, res: Response) => {
-  try {
-    const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.sleepHours > 0);
-    const latest = records.length ? records[records.length - 1] : null;
-    const totalMinutes = latest ? Math.round(latest.sleepHours * 60) : 0;
-    res.json({
-      deviceId,
-      date: latest ? istDate(latest.timestamp) : istDate(new Date()),
-      totalMinutes,
-      series: records.map(r => ({ time: istTime(r.timestamp), stage: r.sleepHours > 6 ? 2 : r.sleepHours > 4 ? 1 : 0 })),
-      deepSleepMinutes: Math.round(totalMinutes * 0.3),
-      lightSleepMinutes: Math.round(totalMinutes * 0.7),
-      awakeTimes: latest ? 1 : 0,
-      sleepScore: totalMinutes > 480 ? 90 : totalMinutes > 360 ? 75 : totalMinutes > 0 ? 60 : 0,
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-app.get("/api/device/:deviceId/bloodpressure", async (req: Request, res: Response) => {
-  try {
-    const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.systolic > 0 && r.diastolic > 0);
-    const s = records.map(r => r.systolic), d = records.map(r => r.diastolic);
-    res.json({
-      deviceId,
-      date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
-      series: records.map(r => ({ time: istTime(r.timestamp), systolic: r.systolic, diastolic: r.diastolic })),
-      avgSystolic: s.length ? Math.round(s.reduce((a, b) => a + b, 0) / s.length) : 0,
-      avgDiastolic: d.length ? Math.round(d.reduce((a, b) => a + b, 0) / d.length) : 0,
-      warningRecords: records.filter(r => r.systolic > 140 || r.diastolic > 90).map(r => ({ time: istDateTime(r.timestamp), value: `${r.systolic}/${r.diastolic}` })),
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-app.get("/api/device/:deviceId/bloodoxygen", async (req: Request, res: Response) => {
-  try {
-    const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.spo2 > 0);
-    const values = records.map(r => r.spo2);
-    res.json({
-      deviceId,
-      series: records.map(r => ({ time: istTime(r.timestamp), value: r.spo2 })),
-      average: values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0,
-      max: values.length ? Math.max(...values) : 0,
-      min: values.length ? Math.min(...values) : 0,
-      warningRecords: records.filter(r => r.spo2 < 95).map(r => ({ time: istDateTime(r.timestamp), value: r.spo2 })),
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-app.get("/api/device/:deviceId/bodytemp", async (req: Request, res: Response) => {
-  try {
-    const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.bodyTemp > 0);
-    const values = records.map(r => r.bodyTemp);
-    res.json({
-      deviceId,
-      date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
-      series: records.map(r => ({ time: istTime(r.timestamp), value: r.bodyTemp })),
-      average: values.length ? parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)) : 0,
-      max: values.length ? Math.max(...values) : 0,
-      min: values.length ? Math.min(...values) : 0,
-      warningRecords: records.filter(r => r.bodyTemp > 37.5 || r.bodyTemp < 35.5).map(r => ({ time: istDateTime(r.timestamp), value: r.bodyTemp })),
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-app.get("/api/device/:deviceId/hearthealth", async (req: Request, res: Response) => {
-  try {
-    const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.hrv > 0);
-    const values = records.map(r => r.hrv);
-    const average = values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
-    res.json({
-      deviceId,
-      date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
-      diagnosis: average > 50 ? "HRV looks normal. No cardiac anomalies detected." : average > 0 ? "Low HRV detected. Consider resting or monitoring." : "No HRV data available.",
-      afibRisk: average > 50 ? "Low" : average > 0 ? "Moderate" : "Unknown",
-      hrvScore: average,
-      series: records.map(r => ({ time: istTime(r.timestamp), value: r.hrv })),
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-app.get("/api/device/:deviceId/ecg", async (req: Request, res: Response) => {
-  try {
-    const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.ecgRecords && r.ecgRecords.length > 0);
-    res.json({
-      deviceId,
-      date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
-      records: records.map(r => ({ time: istDateTime(r.timestamp), wave: r.ecgRecords })),
-      aiResult: records.length ? "Normal sinus rhythm detected from device recordings." : "No active ECG recordings uploaded from device.",
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-app.get("/api/device/:deviceId/pressure", async (req: Request, res: Response) => {
-  try {
-    const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.stress > 0);
-    const values = records.map(r => r.stress);
-    const average = values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
-    res.json({
-      deviceId,
-      date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
-      series: records.map(r => ({ time: istTime(r.timestamp), value: r.stress })),
-      average,
-      level: average < 30 ? "Relaxed" : average < 60 ? "Normal" : "High",
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
 app.get("/api/device/:deviceId/bloodsugar", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.bloodSugar > 0);
-    const values = records.map(r => r.bloodSugar);
-    res.json({
-      deviceId,
-      date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
-      series: records.map(r => ({ time: istTime(r.timestamp), value: r.bloodSugar })),
-      average: values.length ? parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)) : 0,
-      max: values.length ? Math.max(...values) : 0,
-      min: values.length ? Math.min(...values) : 0,
-      unit: "mmol/L",
-    });
+    res.json(buildBloodSugar(deviceId, await getDeviceHealthHistory(deviceId)));
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 app.get("/api/device/:deviceId/bloodketone", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.bloodKetone > 0);
-    const values = records.map(r => r.bloodKetone);
-    res.json({
-      deviceId,
-      date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
-      series: records.map(r => ({ time: istTime(r.timestamp), value: r.bloodKetone })),
-      average: values.length ? parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)) : 0,
-      unit: "mmol/L",
-      normalRange: "0.0~0.3mmol/L",
-    });
+    res.json(buildBloodKetone(deviceId, await getDeviceHealthHistory(deviceId)));
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 app.get("/api/device/:deviceId/uricacid", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
-    const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.uricAcid > 0);
-    const values = records.map(r => r.uricAcid);
-    res.json({
-      deviceId,
-      date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
-      series: records.map(r => ({ time: istTime(r.timestamp), value: r.uricAcid })),
-      average: values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0,
-      unit: "Î¼mol/L",
-      maleStandard: "<420Î¼mol/L",
-      femaleStandard: "<360Î¼mol/L",
-    });
+    res.json(buildUricAcid(deviceId, await getDeviceHealthHistory(deviceId)));
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-app.get("/api/device/:deviceId/locationtrack", async (req: Request, res: Response) => {
+// ─── GROUPED ENDPOINTS (one Firestore read per group) ─────────
+
+// heartrate + bloodpressure + bloodoxygen + bodytemp
+app.get("/api/device/:deviceId/vitals", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
-    const records = history.filter(r => r.location && typeof r.location.lat === "number" && typeof r.location.lng === "number");
-    const tracks = records.map(r => ({ lat: r.location!.lat, lng: r.location!.lng, time: istDateTime(r.timestamp) }));
     res.json({
       deviceId,
-      date: records.length ? istDate(records[records.length - 1].timestamp) : istDate(new Date()),
-      tracks,
-      lastLocation: tracks.length ? { lat: tracks[tracks.length - 1].lat, lng: tracks[tracks.length - 1].lng } : null,
+      heartrate:     buildHeartRate(deviceId, history),
+      bloodpressure: buildBloodPressure(deviceId, history),
+      bloodoxygen:   buildBloodOxygen(deviceId, history),
+      bodytemp:      buildBodyTemp(deviceId, history),
     });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// â”€â”€â”€ ALARM LIST â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// overview + sleep + hearthealth (HRV) + pressure (stress)
+app.get("/api/device/:deviceId/wellness", async (req: Request, res: Response) => {
+  try {
+    const deviceId = req.params.deviceId as string;
+    const [history, liveFallback] = await Promise.all([
+      getDeviceHealthHistory(deviceId),
+      getLiveDeviceFallback(deviceId),
+    ]);
+    res.json({
+      deviceId,
+      overview:    buildOverview(deviceId, history, liveFallback),
+      sleep:       buildSleep(deviceId, history),
+      hearthealth: buildHeartHealth(deviceId, history),
+      pressure:    buildPressure(deviceId, history),
+    });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ecg only
+app.get("/api/device/:deviceId/diagnostics", async (req: Request, res: Response) => {
+  try {
+    const deviceId = req.params.deviceId as string;
+    const history = await getDeviceHealthHistory(deviceId);
+    res.json({ deviceId, ecg: buildEcg(deviceId, history) });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// locationtrack + device-scoped alarms
+app.get("/api/device/:deviceId/safety", async (req: Request, res: Response) => {
+  try {
+    const deviceId = req.params.deviceId as string;
+    const [history, alarmsSnap] = await Promise.all([
+      getDeviceHealthHistory(deviceId),
+      db.collection("alarms").where("deviceId", "==", deviceId).get(),
+    ]);
+    const alarms = alarmsSnap.docs.map(doc => {
+      const d = doc.data() as Record<string, any>;
+      let time = "";
+      if (d.time)            time = d.time.toDate ? istDateTime(d.time.toDate()) : String(d.time);
+      else if (d.receivedAt) time = d.receivedAt.toDate ? istDateTime(d.receivedAt.toDate()) : String(d.receivedAt);
+      else if (d.timestamp)  time = istDateTime(new Date(d.timestamp));
+      return { id: doc.id, nickname: d.nickname || "", deviceId: d.deviceId || d.device_id || "", type: d.type || "", time, location: d.location || "", content: d.content || "" };
+    });
+    alarms.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    res.json({ deviceId, locationtrack: buildLocationTrack(deviceId, history), alarms });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+
+// â"€â"€â"€ ALARM LIST â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 app.get("/api/alarms", async (_req: Request, res: Response) => {
   try {
     const snapshot = await db.collection("alarms").get();
@@ -419,7 +454,7 @@ app.get("/api/alarms", async (_req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// â”€â”€â”€ ROOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€ ROOT â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 app.get("/", (_req: Request, res: Response) => res.send("API is running"));
 
 export default app;

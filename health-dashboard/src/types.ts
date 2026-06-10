@@ -144,3 +144,39 @@ export interface OverviewData {
   sleepHours: number;
   bloodPressure: { systolic: number; diastolic: number };
 }
+
+export interface EcgData {
+  deviceId: string;
+  date: string;
+  records: { time: string; wave: number[] }[];
+  aiResult: string;
+}
+
+// ─── Grouped response types ────────────────────────────────────
+
+export interface VitalsData {
+  deviceId: string;
+  heartrate: HeartRateData;
+  bloodpressure: BloodPressureData;
+  bloodoxygen: BloodOxygenData;
+  bodytemp: BodyTempData;
+}
+
+export interface WellnessData {
+  deviceId: string;
+  overview: OverviewData;
+  sleep: SleepData;
+  hearthealth: HeartHealthData;
+  pressure: PressureData;
+}
+
+export interface DiagnosticsData {
+  deviceId: string;
+  ecg: EcgData;
+}
+
+export interface SafetyData {
+  deviceId: string;
+  locationtrack: LocationData;
+  alarms: AlarmRow[];
+}

@@ -1,20 +1,10 @@
-import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { useParams } from "react-router-dom";
-import { getPressure } from "../../api/api";
 import type { PressureData } from "../../types";
 
-const PressureValue = () => {
-  const { id } = useParams<{ id: string }>();
-  const [data, setData]       = useState<PressureData | null>(null);
-  const [loading, setLoading] = useState(true);
+interface Props { data?: PressureData }
 
-  useEffect(() => {
-    getPressure(id!).then(setData).catch(err => console.log(err)).finally(() => setLoading(false));
-  }, [id]);
-
-  if (loading) return <div>Loading...</div>;
-  if (!data)   return <div>No pressure data available</div>;
+const PressureValue = ({ data }: Props) => {
+  if (!data) return <div>Loading...</div>;
 
   return (
     <div>

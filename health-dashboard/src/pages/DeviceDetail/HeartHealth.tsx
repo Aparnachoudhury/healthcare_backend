@@ -1,19 +1,9 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { getHeartHealth } from "../../api/api";
 import type { HeartHealthData } from "../../types";
 
-const HeartHealth = () => {
-  const { id } = useParams<{ id: string }>();
-  const [data, setData]       = useState<HeartHealthData | null>(null);
-  const [loading, setLoading] = useState(true);
+interface Props { data?: HeartHealthData }
 
-  useEffect(() => {
-    getHeartHealth(id!).then(setData).catch(err => console.log(err)).finally(() => setLoading(false));
-  }, [id]);
-
-  if (loading) return <div>Loading...</div>;
-  if (!data)   return <div>No heart health data available</div>;
+const HeartHealth = ({ data }: Props) => {
+  if (!data) return <div>Loading...</div>;
 
   return (
     <div>

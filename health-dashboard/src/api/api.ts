@@ -1,8 +1,6 @@
 import type {
-  DeviceRow, AlarmRow, HeartRateData, SleepData,
-  BloodPressureData, BloodOxygenData, BodyTempData,
-  HeartHealthData, PressureData, SimpleSeriesData,
-  LocationData, OverviewData,
+  DeviceRow, AlarmRow, SimpleSeriesData,
+  VitalsData, WellnessData, DiagnosticsData, SafetyData,
 } from "../types";
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "/api";
@@ -13,19 +11,17 @@ async function get<T>(url: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export const getHealthData    = ()             => get<DeviceRow[]>(`${BASE}/health-data`);
-export const getAlarms        = ()             => get<AlarmRow[]>(`${BASE}/alarms`);
+// ─── Global (non-device) endpoints ────────────────────────────
+export const getHealthData = () => get<DeviceRow[]>(`${BASE}/health-data`);
+export const getAlarms     = () => get<AlarmRow[]>(`${BASE}/alarms`);
 
-export const getOverview      = (id: string)   => get<OverviewData>(`${BASE}/device/${id}/overview`);
-export const getHeartRate     = (id: string)   => get<HeartRateData>(`${BASE}/device/${id}/heartrate`);
-export const getSleep         = (id: string)   => get<SleepData>(`${BASE}/device/${id}/sleep`);
-export const getBloodPressure = (id: string)   => get<BloodPressureData>(`${BASE}/device/${id}/bloodpressure`);
-export const getBloodOxygen   = (id: string)   => get<BloodOxygenData>(`${BASE}/device/${id}/bloodoxygen`);
-export const getBodyTemp      = (id: string)   => get<BodyTempData>(`${BASE}/device/${id}/bodytemp`);
-export const getHeartHealth   = (id: string)   => get<HeartHealthData>(`${BASE}/device/${id}/hearthealth`);
-export const getECG           = (id: string)   => get<unknown>(`${BASE}/device/${id}/ecg`);
-export const getPressure      = (id: string)   => get<PressureData>(`${BASE}/device/${id}/pressure`);
-export const getBloodSugar    = (id: string)   => get<SimpleSeriesData>(`${BASE}/device/${id}/bloodsugar`);
-export const getBloodKetone   = (id: string)   => get<SimpleSeriesData>(`${BASE}/device/${id}/bloodketone`);
-export const getUricAcid      = (id: string)   => get<SimpleSeriesData>(`${BASE}/device/${id}/uricacid`);
-export const getLocationTrack = (id: string)   => get<LocationData>(`${BASE}/device/${id}/locationtrack`);
+// ─── Grouped device endpoints (one Firestore read per group) ──
+export const getVitals      = (id: string) => get<VitalsData>(`${BASE}/device/${id}/vitals`);
+export const getWellness    = (id: string) => get<WellnessData>(`${BASE}/device/${id}/wellness`);
+export const getDiagnostics = (id: string) => get<DiagnosticsData>(`${BASE}/device/${id}/diagnostics`);
+export const getSafety      = (id: string) => get<SafetyData>(`${BASE}/device/${id}/safety`);
+
+// ─── Individual endpoints still used by "more" tabs ───────────
+export const getBloodSugar  = (id: string) => get<SimpleSeriesData>(`${BASE}/device/${id}/bloodsugar`);
+export const getBloodKetone = (id: string) => get<SimpleSeriesData>(`${BASE}/device/${id}/bloodketone`);
+export const getUricAcid    = (id: string) => get<SimpleSeriesData>(`${BASE}/device/${id}/uricacid`);
