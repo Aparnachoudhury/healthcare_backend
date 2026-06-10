@@ -1,9 +1,9 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import DashboardLayout from './components/DashboardLayout';
-import Healthdata from './pages/Healthdata';
-import AlarmList from './pages/AlarmList';
-import AlarmBigScreen from './pages/AlarmBigScreen';
-import DeviceDetail from './pages/DeviceDetail/DeviceDetail';
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import DashboardLayout from "./components/DashboardLayout";
+import Healthdata from "./pages/Healthdata";
+import AlarmList from "./pages/AlarmList";
+import AlarmBigScreen from "./pages/AlarmBigScreen";
+import DeviceDetail from "./pages/DeviceDetail/DeviceDetail";
 
 function App() {
   return (
