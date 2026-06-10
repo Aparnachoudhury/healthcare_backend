@@ -7,22 +7,17 @@ info:
 
     ```
 
-    ┌──────────────┐        ┌───────────────────┐       
-    ┌────────────────┐        ┌─────────────────────┐
+    ┌──────────────┐        ┌───────────────────┐        ┌────────────────┐        ┌─────────────────────┐
 
-    │              │        │                   │        │               
-    │        │                     │
+    │              │        │                   │        │                │        │                     │
 
-    │   Wearable   │──────▶ │  Stealthera Cloud │──────▶ │   Client API  
-    │──────▶ │  Client Platform    │
+    │   Wearable   │──────▶ │  Stealthera Cloud │──────▶ │   Client API   │──────▶ │  Client Platform    │
 
-    │   Device     │        │                   │        │               
-    │        │                     │
+    │   Device     │        │                   │        │                │        │                     │
 
-    └──────────────┘        └───────────────────┘       
-    └────────────────┘        └─────────────────────┘
-         Stealthera Device                  Firebase / Node              REST Endpoints          Hospital Apps / HIS /
-       Smartwatch                  Backend                  (This Document)         EMR / Cloud Infra
+    └──────────────┘        └───────────────────┘        └────────────────┘        └─────────────────────┘
+         Stealthera Device          Firebase / Node              REST Endpoints          Hospital Apps / HIS /
+           Smartwatch                  Backend                  (This Document)         EMR / Cloud Infra
     ```
 
 
@@ -41,7 +36,7 @@ info:
     endpoints for the health dashboard frontend.
 
 
-    **Base URL:** `http://localhost:3000`
+    **Base URL:** `https://api.stealthera.in`
 
 
     **Device ID Example:** `863758060992848`
@@ -56,10 +51,26 @@ info:
 
     - **Health Data** — aggregated live device list
 
-    - **Device Detail** — per-device health metrics (heart rate, sleep, blood
-    pressure, etc.)
+    - **Grouped Device** — per-device health metrics returned in grouped batches
+      (one Firestore read per group, used by the dashboard frontend)
+
+    - **More Metrics** — individual per-device endpoints for blood sugar, blood
+      ketone, and uric acid (separate Firestore reads)
 
     - **Alarms** — event / alert log
+
+
+    ---
+
+
+    ## Migration Note
+
+
+    In v1.1 the ten individual device-detail endpoints (`/overview`, `/heartrate`,
+    `/sleep`, `/bloodpressure`, `/bloodoxygen`, `/bodytemp`, `/hearthealth`,
+    `/ecg`, `/pressure`, `/locationtrack`) were consolidated into four grouped
+    endpoints to reduce Firestore read costs. If you were calling any of those
+    legacy paths, migrate to the grouped equivalents below.
 
 
     ---
@@ -68,7 +79,7 @@ info:
     ## Note
 
 
-    This document represents the current **v1 API specification**.
+    This document represents the current **v1.1 API specification**.
 
 
     Future versions will include:
@@ -80,14 +91,23 @@ info:
     - Expanded monitoring and audit capabilities
 
     - Advanced integration and interoperability features
-  version: 1.0.0
+  version: 1.1.0
 servers:
   - url: https://api.stealthera.in
 tags:
   - name: Health Check
   - name: Watch Upload
   - name: Health Data
-  - name: Device Detail
+  - name: Grouped Device
+    description: >-
+      Grouped endpoints — each call triggers one Firestore history read and
+      returns all metrics for that group. Used by the dashboard frontend to
+      minimise cloud read costs.
+  - name: More Metrics
+    description: >-
+      Individual endpoints for blood sugar, blood ketone, and uric acid. Each
+      triggers its own Firestore read and is used by the "More" tabs in the
+      dashboard.
   - name: Alarms
 paths:
   /:
@@ -100,9 +120,11 @@ paths:
         API server is running.
       responses:
         '200':
-          description: Successful response
+          description: API is running
           content:
-            application/json: {}
+            text/plain:
+              example: API is running
+
   /4g/pb/upload:
     post:
       tags:
@@ -142,12 +164,6 @@ paths:
         | `steps` | number | Step count |
 
         | `phone_number` | string | Associated phone number |
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: string
-              example: ''
       parameters:
         - name: Content-Type
           in: header
@@ -155,11 +171,21 @@ paths:
             type: string
           description: Must be octet-stream — the watch firmware sends a raw binary payload
           example: application/octet-stream
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
       responses:
         '200':
-          description: Successful response
+          description: ACK byte (0x00)
           content:
-            application/json: {}
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
   /api/health-data:
     get:
       tags:
@@ -178,14 +204,13 @@ paths:
 
         | `id` | string | Device ID |
 
-        | `nickname` | string | Human-readable label (defaults to device ID or
-        "Stealthera Device") |
+        | `nickname` | string | Human-readable label (defaults to device ID) |
 
         | `model` | string | Device model (default: `H102CSH`) |
 
         | `deviceId` | string | IMEI / device identifier |
 
-        | `status` | string | Online / Offline |
+        | `status` | string | `Online` / `Offline` |
 
         | `steps` | number | Current step count |
 
@@ -197,311 +222,241 @@ paths:
 
         | `phone` | string | Associated phone number |
 
-        | `updateTime` | string | Timestamp of last update |
+        | `updateTime` | string | Timestamp of last update (IST) |
       responses:
         '200':
-          description: Successful response
+          description: Array of device rows
           content:
-            application/json: {}
-  /api/device/{deviceId}/overview:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:          { type: string }
+                    nickname:    { type: string }
+                    model:       { type: string }
+                    deviceId:    { type: string }
+                    status:      { type: string }
+                    steps:       { type: number }
+                    heartRate:   { type: number }
+                    bloodOxygen: { type: number }
+                    bodyTemp:    { type: number }
+                    phone:       { type: string }
+                    updateTime:  { type: string }
+
+  /api/device/{deviceId}/vitals:
     get:
       tags:
-        - Device Detail
-      summary: Overview
-      description: |-
-        Returns a daily summary snapshot for a specific device.
+        - Grouped Device
+      summary: Vitals — Heart Rate, Blood Pressure, Blood Oxygen, Body Temp
+      description: >-
+        Returns all vital-sign metrics for a device in a single response.
+        Triggers **one** Firestore history read.
 
-        **Path parameter:**
-        - `deviceId` — Device IMEI
 
-        **Response fields:**
-        | Field | Type | Description |
-        |---|---|---|
-        | `deviceId` | string | Device IMEI |
-        | `date` | string | Summary date (YYYY-MM-DD) |
-        | `steps` | number | Step count |
-        | `heartRate` | number | BPM |
-        | `bloodOxygen` | number | SpO2 % |
-        | `bodyTemp` | number | °C |
-        | `sleepHours` | number | Total sleep hours |
-        | `bloodPressure.systolic` | number | mmHg |
-        | `bloodPressure.diastolic` | number | mmHg |
+        **Replaces individual endpoints:** `/heartrate`, `/bloodpressure`,
+        `/bloodoxygen`, `/bodytemp`
+
+
+        **Response shape:**
+
+        ```json
+
+        {
+          "deviceId": "string",
+          "heartrate":     { "deviceId", "series", "average", "max", "min" },
+          "bloodpressure": { "deviceId", "date", "series", "avgSystolic", "avgDiastolic", "warningRecords" },
+          "bloodoxygen":   { "deviceId", "series", "average", "max", "min", "warningRecords" },
+          "bodytemp":      { "deviceId", "date", "series", "average", "max", "min", "warningRecords" }
+        }
+
+        ```
+
+
+        **Sub-field details:**
+
+        | Sub-object | Field | Type | Description |
+
+        |---|---|---|---|
+
+        | `heartrate` | `series` | array | `[{ time: string, value: number }]` — BPM readings |
+
+        | `heartrate` | `average` / `max` / `min` | number | BPM stats |
+
+        | `bloodpressure` | `series` | array | `[{ time, systolic, diastolic }]` — 24 hourly readings |
+
+        | `bloodpressure` | `avgSystolic` / `avgDiastolic` | number | mmHg averages |
+
+        | `bloodpressure` | `warningRecords` | array | Readings that exceeded safe thresholds |
+
+        | `bloodoxygen` | `series` | array | `[{ time: string, value: number }]` — SpO2 readings |
+
+        | `bloodoxygen` | `warningRecords` | array | Readings below safe threshold |
+
+        | `bodytemp` | `series` | array | `[{ time: string, value: number }]` — °C readings |
+
+        | `bodytemp` | `warningRecords` | array | Readings outside normal range |
       parameters:
         - name: deviceId
           in: path
           schema:
             type: string
           required: true
+          description: Device IMEI
+          example: '863758060992848'
       responses:
         '200':
-          description: Successful response
+          description: Vitals group
           content:
-            application/json: {}
-  /api/device/{deviceId}/heartrate:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId:     { type: string }
+                  heartrate:    { type: object }
+                  bloodpressure: { type: object }
+                  bloodoxygen:  { type: object }
+                  bodytemp:     { type: object }
+        '500':
+          description: Firestore read error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /api/device/{deviceId}/wellness:
     get:
       tags:
-        - Device Detail
-      summary: Heart Rate
+        - Grouped Device
+      summary: Wellness — Overview, Sleep, Heart Health, Pressure (Stress)
       description: >-
-        Returns real-time heart rate data for the device from Firestore
-        (`live_devices` collection).
+        Returns wellness metrics for a device in a single response.
+        Triggers **two** parallel Firestore reads (`healthData` history +
+        `live_devices` fallback for the overview snapshot).
 
 
-        If the device does not exist in Firestore, returns empty series with
-        zero values.
+        **Replaces individual endpoints:** `/overview`, `/sleep`, `/hearthealth`,
+        `/pressure`
 
 
-        **Response fields:**
+        **Response shape:**
 
-        | Field | Type | Description |
+        ```json
 
-        |---|---|---|
+        {
+          "deviceId": "string",
+          "overview":    { "deviceId", "date", "steps", "heartRate", "bloodOxygen", "bodyTemp", "sleepHours", "bloodPressure" },
+          "sleep":       { "deviceId", "date", "totalMinutes", "series", "deepSleepMinutes", "lightSleepMinutes", "awakeTimes", "sleepScore" },
+          "hearthealth": { "deviceId", "date", "diagnosis", "afibRisk", "hrvScore", "series" },
+          "pressure":    { "deviceId", "date", "series", "average", "level" }
+        }
 
-        | `deviceId` | string | Device IMEI |
+        ```
 
-        | `series` | array | `[{ time: string, value: number }]` — one entry per
-        reading |
 
-        | `average` | number | Average BPM |
+        **Sub-field details:**
 
-        | `max` | number | Maximum BPM |
+        | Sub-object | Field | Type | Description |
 
-        | `min` | number | Minimum BPM |
+        |---|---|---|---|
+
+        | `overview` | `steps` | number | Step count |
+
+        | `overview` | `heartRate` | number | BPM |
+
+        | `overview` | `bloodOxygen` | number | SpO2 % |
+
+        | `overview` | `bodyTemp` | number | °C |
+
+        | `overview` | `sleepHours` | number | Total sleep hours |
+
+        | `overview` | `bloodPressure` | object | `{ systolic, diastolic }` mmHg |
+
+        | `sleep` | `series` | array | `[{ time, stage }]` — 0=awake, 1=light, 2=deep |
+
+        | `sleep` | `sleepScore` | number | Score 0–100 |
+
+        | `hearthealth` | `afibRisk` | string | `Low` / `Medium` / `High` |
+
+        | `hearthealth` | `hrvScore` | number | HRV score 0–100 |
+
+        | `pressure` | `series` | array | `[{ time, value }]` — stress index 0–100 |
+
+        | `pressure` | `level` | string | `Low` / `Normal` / `High` |
       parameters:
         - name: deviceId
           in: path
           schema:
             type: string
           required: true
+          description: Device IMEI
+          example: '863758060992848'
       responses:
         '200':
-          description: Successful response
+          description: Wellness group
           content:
-            application/json: {}
-  /api/device/{deviceId}/sleep:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId:    { type: string }
+                  overview:    { type: object }
+                  sleep:       { type: object }
+                  hearthealth: { type: object }
+                  pressure:    { type: object }
+        '500':
+          description: Firestore read error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /api/device/{deviceId}/diagnostics:
     get:
       tags:
-        - Device Detail
-      summary: Sleep
+        - Grouped Device
+      summary: Diagnostics — ECG
       description: >-
-        Returns sleep analysis data for the device.
+        Returns ECG records and AI interpretation for a device.
+        Triggers **one** Firestore history read.
 
 
-        **Response fields:**
+        **Replaces individual endpoint:** `/ecg`
+
+
+        **Response shape:**
+
+        ```json
+
+        {
+          "deviceId": "string",
+          "ecg": {
+            "deviceId": "string",
+            "date": "YYYY-MM-DD",
+            "records": [{ "time": "string", "wave": [number] }],
+            "aiResult": "string"
+          }
+        }
+
+        ```
+
+
+        **ECG sub-fields:**
 
         | Field | Type | Description |
 
         |---|---|---|
 
-        | `deviceId` | string | Device IMEI |
+        | `records` | array | ECG measurement records (empty if no readings taken) |
 
-        | `date` | string | Date (YYYY-MM-DD) |
+        | `records[].time` | string | Measurement timestamp (IST) |
 
-        | `totalMinutes` | number | Total sleep in minutes |
-
-        | `series` | array | `[{ time: string, stage: 0\|1\|2 }]` — 0=awake,
-        1=light, 2=deep |
-
-        | `deepSleepMinutes` | number | Deep sleep duration |
-
-        | `lightSleepMinutes` | number | Light sleep duration |
-
-        | `awakeTimes` | number | Number of wake events |
-
-        | `sleepScore` | number | Score 0–100 |
-      parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json: {}
-  /api/device/{deviceId}/bloodpressure:
-    get:
-      tags:
-        - Device Detail
-      summary: Blood Pressure
-      description: >-
-        Returns 24-hour blood pressure time series for the device.
-
-
-        **Response fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `deviceId` | string | Device IMEI |
-
-        | `date` | string | Date (YYYY-MM-DD) |
-
-        | `series` | array | `[{ time: string, systolic: number, diastolic:
-        number }]` — 24 hourly readings |
-
-        | `avgSystolic` | number | Average systolic mmHg |
-
-        | `avgDiastolic` | number | Average diastolic mmHg |
-
-        | `warningRecords` | array | Records that exceeded safe thresholds |
-      parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json: {}
-  /api/device/{deviceId}/bloodoxygen:
-    get:
-      tags:
-        - Device Detail
-      summary: Blood Oxygen (SpO2)
-      description: >-
-        Returns real-time blood oxygen (SpO2) data from Firestore.
-
-
-        If the device does not exist in Firestore, returns empty series with
-        zero values.
-
-
-        **Response fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `deviceId` | string | Device IMEI |
-
-        | `series` | array | `[{ time: string, value: number }]` |
-
-        | `average` | number | Average SpO2 % |
-
-        | `max` | number | Max SpO2 % |
-
-        | `min` | number | Min SpO2 % |
-
-        | `warningRecords` | array | Readings below safe threshold |
-      parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json: {}
-  /api/device/{deviceId}/bodytemp:
-    get:
-      tags:
-        - Device Detail
-      summary: Body Temperature
-      description: >-
-        Returns real-time body temperature data from Firestore.
-
-
-        If the device has no temperature reading, `series` is empty and all
-        numeric fields are `0`.
-
-
-        **Response fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `deviceId` | string | Device IMEI |
-
-        | `date` | string | Date (YYYY-MM-DD) |
-
-        | `series` | array | `[{ time: string, value: number }]` — value in °C |
-
-        | `average` | number | Average temperature °C |
-
-        | `max` | number | Max temperature °C |
-
-        | `min` | number | Min temperature °C |
-
-        | `warningRecords` | array | Readings outside normal range |
-      parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json: {}
-  /api/device/{deviceId}/hearthealth:
-    get:
-      tags:
-        - Device Detail
-      summary: Heart Health (HRV / AFib)
-      description: >-
-        Returns heart health analysis including HRV score and AFib risk
-        assessment.
-
-
-        **Response fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `deviceId` | string | Device IMEI |
-
-        | `date` | string | Date (YYYY-MM-DD) |
-
-        | `diagnosis` | string | Plain-text AI diagnosis summary |
-
-        | `afibRisk` | string | AFib risk level: `Low` / `Medium` / `High` |
-
-        | `hrvScore` | number | Heart Rate Variability score (0–100) |
-
-        | `series` | array | `[{ time: string, value: number }]` — 24 hourly
-        readings |
-      parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json: {}
-  /api/device/{deviceId}/ecg:
-    get:
-      tags:
-        - Device Detail
-      summary: ECG
-      description: >-
-        Returns ECG records and AI interpretation for the device.
-
-
-        **Response fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `deviceId` | string | Device IMEI |
-
-        | `date` | string | Date (YYYY-MM-DD) |
-
-        | `records` | array | ECG measurement records (empty if no readings
-        taken) |
+        | `records[].wave` | number[] | Raw ECG waveform data points |
 
         | `aiResult` | string | AI-generated ECG interpretation |
       parameters:
@@ -510,91 +465,299 @@ paths:
           schema:
             type: string
           required: true
+          description: Device IMEI
+          example: '863758060992848'
       responses:
         '200':
-          description: Successful response
+          description: Diagnostics group
           content:
-            application/json: {}
-  /api/device/{deviceId}/pressure:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId: { type: string }
+                  ecg:      { type: object }
+        '500':
+          description: Firestore read error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /api/device/{deviceId}/safety:
     get:
       tags:
-        - Device Detail
-      summary: Stress / Pressure
+        - Grouped Device
+      summary: Safety — Location Track + Device Alarms
       description: >-
-        Returns stress/pressure index data for the device.
+        Returns GPS location history and device-scoped alarm log in a single
+        response. Triggers **two** parallel Firestore reads (`healthData`
+        history + `alarms` filtered by `deviceId`).
 
 
-        **Response fields:**
+        **Replaces individual endpoint:** `/locationtrack`
+
+        **Adds:** device-scoped alarm list (previously only available via
+        the global `/api/alarms` endpoint).
+
+
+        **Response shape:**
+
+        ```json
+
+        {
+          "deviceId": "string",
+          "locationtrack": {
+            "deviceId": "string",
+            "date": "YYYY-MM-DD",
+            "tracks": [{ "lat": number, "lng": number, "time": "string" }],
+            "lastLocation": { "lat": number, "lng": number } | null
+          },
+          "alarms": [{ "id", "nickname", "deviceId", "type", "time", "location", "content" }]
+        }
+
+        ```
+
+
+        **Location sub-fields:**
 
         | Field | Type | Description |
 
         |---|---|---|
 
-        | `deviceId` | string | Device IMEI |
-
-        | `date` | string | Date (YYYY-MM-DD) |
-
-        | `series` | array | `[{ time: string, value: number }]` — 24 hourly
-        readings, scale 0–100 |
-
-        | `average` | number | Average stress index |
-
-        | `level` | string | Overall level: `Low` / `Normal` / `High` |
-      parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json: {}
-  /api/device/{deviceId}/locationtrack:
-    get:
-      tags:
-        - Device Detail
-      summary: Location Track
-      description: >-
-        Returns GPS location track history for the device.
-
-
-        `tracks` and `lastLocation` are currently empty / null while location
-        features are under development.
-
-
-        **Response fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `deviceId` | string | Device IMEI |
-
-        | `date` | string | Date (YYYY-MM-DD) |
-
-        | `tracks` | array | Array of `{ lat, lng, time }` GPS points |
+        | `tracks` | array | GPS points — empty while location features are under development |
 
         | `lastLocation` | object\|null | Most recent GPS fix, or `null` |
+
+
+        **Alarm fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `id` | string | Alarm document ID |
+
+        | `type` | string | `Not worn` / `Sleep` / `Heart rate warning` |
+
+        | `time` | string | Timestamp (IST, YYYY-MM-DD HH:mm:ss) |
+
+        | `content` | string | Human-readable description |
       parameters:
         - name: deviceId
           in: path
           schema:
             type: string
           required: true
+          description: Device IMEI
+          example: '863758060992848'
       responses:
         '200':
-          description: Successful response
+          description: Safety group
           content:
-            application/json: {}
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId:      { type: string }
+                  locationtrack: { type: object }
+                  alarms:
+                    type: array
+                    items: { type: object }
+        '500':
+          description: Firestore read error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /api/device/{deviceId}/bloodsugar:
+    get:
+      tags:
+        - More Metrics
+      summary: Blood Sugar
+      description: >-
+        Returns blood sugar time-series data for a device. Triggers one
+        Firestore history read.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `series` | array | `[{ time: string, value: number }]` — readings in mmol/L |
+
+        | `average` | number | Average blood sugar |
+
+        | `max` | number | Maximum reading |
+
+        | `min` | number | Minimum reading |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+          description: Device IMEI
+          example: '863758060992848'
+      responses:
+        '200':
+          description: Blood sugar series
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId: { type: string }
+                  date:     { type: string }
+                  series:   { type: array, items: { type: object } }
+                  average:  { type: number }
+                  max:      { type: number }
+                  min:      { type: number }
+        '500':
+          description: Firestore read error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /api/device/{deviceId}/bloodketone:
+    get:
+      tags:
+        - More Metrics
+      summary: Blood Ketone
+      description: >-
+        Returns blood ketone time-series data for a device. Triggers one
+        Firestore history read.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `series` | array | `[{ time: string, value: number }]` — readings in mmol/L |
+
+        | `average` | number | Average ketone level |
+
+        | `max` | number | Maximum reading |
+
+        | `min` | number | Minimum reading |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+          description: Device IMEI
+          example: '863758060992848'
+      responses:
+        '200':
+          description: Blood ketone series
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId: { type: string }
+                  date:     { type: string }
+                  series:   { type: array, items: { type: object } }
+                  average:  { type: number }
+                  max:      { type: number }
+                  min:      { type: number }
+        '500':
+          description: Firestore read error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /api/device/{deviceId}/uricacid:
+    get:
+      tags:
+        - More Metrics
+      summary: Uric Acid
+      description: >-
+        Returns uric acid time-series data for a device. Triggers one
+        Firestore history read.
+
+
+        **Response fields:**
+
+        | Field | Type | Description |
+
+        |---|---|---|
+
+        | `deviceId` | string | Device IMEI |
+
+        | `date` | string | Date (YYYY-MM-DD) |
+
+        | `series` | array | `[{ time: string, value: number }]` — readings in mg/dL |
+
+        | `average` | number | Average uric acid level |
+
+        | `max` | number | Maximum reading |
+
+        | `min` | number | Minimum reading |
+      parameters:
+        - name: deviceId
+          in: path
+          schema:
+            type: string
+          required: true
+          description: Device IMEI
+          example: '863758060992848'
+      responses:
+        '200':
+          description: Uric acid series
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId: { type: string }
+                  date:     { type: string }
+                  series:   { type: array, items: { type: object } }
+                  average:  { type: number }
+                  max:      { type: number }
+                  min:      { type: number }
+        '500':
+          description: Firestore read error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
   /api/alarms:
     get:
       tags:
         - Alarms
-      summary: Get Alarm List
+      summary: Get Alarm List (All Devices)
       description: |-
-        Returns the full alarm / event log across all devices.
+        Returns the full alarm / event log across all devices, sorted newest
+        first. For alarms scoped to a single device, use
+        `GET /api/device/{deviceId}/safety` instead.
 
         **Alarm types:**
         - `Not worn` — watch detected it is not being worn
@@ -604,15 +767,35 @@ paths:
         **Response fields per alarm:**
         | Field | Type | Description |
         |---|---|---|
-        | `id` | number | Unique alarm ID |
+        | `id` | string | Alarm document ID |
         | `nickname` | string | Device owner nickname (may be empty) |
         | `deviceId` | string | Device IMEI |
         | `type` | string | Alarm type |
-        | `time` | string | Timestamp (YYYY-MM-DD HH:mm:ss) |
+        | `time` | string | Timestamp (IST, YYYY-MM-DD HH:mm:ss) |
         | `location` | string | GPS location string (empty if unavailable) |
         | `content` | string | Human-readable alarm description |
       responses:
         '200':
-          description: Successful response
+          description: Array of alarms sorted newest first
           content:
-            application/json: {}
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:       { type: string }
+                    nickname: { type: string }
+                    deviceId: { type: string }
+                    type:     { type: string }
+                    time:     { type: string }
+                    location: { type: string }
+                    content:  { type: string }
+        '500':
+          description: Firestore read error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
