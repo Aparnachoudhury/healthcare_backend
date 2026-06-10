@@ -5,7 +5,7 @@ import type {
   LocationData, OverviewData,
 } from "../types";
 
-const BASE = "http://localhost:3000/api";
+const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "/api";
 
 async function get<T>(url: string): Promise<T> {
   const response = await fetch(url);
