@@ -68,7 +68,7 @@ info:
     | Distance | If sent by firmware | Yes (`/wellness`) | Returns 0 if not in payload |
     | Calories | If sent by firmware | Yes (`/wellness`) | Returns 0 if not in payload |
     | Sleep (total) | Yes | Yes (`/wellness`) | |
-    | Deep / Light / REM sleep | If sent by firmware | Yes (`/wellness`) | Estimated if not in payload |
+    | Deep / Light / REM sleep | If sent by firmware | Yes (/wellness) | Returns 0 when unavailable; see stagesAvailable flag |
     | HRV | If sent by firmware | Yes (`/wellness`) | |
     | Stress index | If sent by firmware | Yes (`/wellness`) | |
     | ECG | If sent by firmware | Yes (`/diagnostics`) | |
