@@ -9,7 +9,7 @@ info:
 
     ┌──────────────┐        ┌───────────────────┐        ┌────────────────┐        ┌─────────────────────┐
 
-    │   Wearable   │──────▶ │  Stealthera Cloud │──────▶ │   Client API   │──────▶ │  Client Platform    │
+    │   Wearable   │──────▶ │  Stealthera Cloud │──────▶ │   Stealthera API   │──────▶ │  Client Platform    │
 
     │   Device     │        │  Firebase / Node  │        │  (This Doc)    │        │  HIS / EMR / Apps   │
 
