@@ -275,14 +275,14 @@ paths:
         | Sub-key | Key Fields |
         |---|---|
         | `overview` | `steps`, `heartRate`, `bloodOxygen`, `bodyTemp`, `sleepHours`, `distance`, `calories`, `bloodPressure{systolic,diastolic}` |
-        | `sleep` | `totalMinutes`, `deepSleepMinutes`, `lightSleepMinutes`, `remSleepMinutes`, `sleepScore`, `apneaRisk`, `series[]{time,stage}` |
+        | `sleep` | `totalMinutes`, `deepSleepMinutes`, `lightSleepMinutes`, `remSleepMinutes`, `stagesAvailable`, `sleepScore`, `apneaRisk`, `series[]{time,stage}` |
         | `hearthealth` | `diagnosis`, `afibRisk`, `hrvScore`, `series[]{time,value}` |
         | `pressure` | `average`, `level`, `series[]{time,value}` |
 
 
         **`apneaRisk`** is `"Unknown"` until the watch firmware sends apnea data.
 
-        **`remSleepMinutes`** is estimated (20% of total) if the firmware does not send `rem_sleep_minutes`.
+        **`stagesAvailable`** is `true` when sleep stage data (deep/light/REM) was received from the device. When `false`, `deepSleepMinutes`, `lightSleepMinutes`, and `remSleepMinutes` all return `0` — no estimation is performed.
       parameters:
         - $ref: '#/components/parameters/deviceId'
       responses:
