@@ -96,6 +96,9 @@ tags:
   - name: Alarms
     description: Global alarm log across all devices.
 
+security:
+  - bearerAuth: []
+
 paths:
   /:
     get:
@@ -103,6 +106,7 @@ paths:
         - Health Check
       summary: Root — API Status
       description: Returns plain-text confirmation that the API server is running.
+      security: []
       responses:
         '200':
           description: API is running
@@ -160,6 +164,7 @@ paths:
         | `sim_iccid` | string | SIM ICCID |
         | `firmware_version` | string | Firmware build |
         | `phone_number` | string | Associated phone |
+      security: []
       parameters:
         - name: Content-Type
           in: header
@@ -226,6 +231,10 @@ paths:
                     bodyTemp:    { type: number }
                     phone:       { type: string }
                     updateTime:  { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -259,6 +268,10 @@ paths:
                   bloodpressure: { type: object }
                   bloodoxygen:   { type: object }
                   bodytemp:      { type: object }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -298,6 +311,10 @@ paths:
                   sleep:       { type: object }
                   hearthealth: { type: object }
                   pressure:    { type: object }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -326,6 +343,10 @@ paths:
                 properties:
                   deviceId: { type: string }
                   ecg:      { type: object }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -357,6 +378,10 @@ paths:
                   deviceId:      { type: string }
                   locationtrack: { type: object }
                   alarms:        { type: array, items: { type: object } }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -405,6 +430,10 @@ paths:
                   phone:           { type: string, nullable: true }
                   status:          { type: string }
                   lastSeen:        { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -454,6 +483,10 @@ paths:
                   fallAlarms:      { type: array, items: { type: object } }
                   sedentaryAlarms: { type: array, items: { type: object } }
                   callLogs:        { type: array, items: { type: object } }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -471,6 +504,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SimpleSeriesData'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -488,6 +525,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SimpleSeriesData'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -505,6 +546,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SimpleSeriesData'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -542,6 +587,10 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AlarmRow'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Error'
 
@@ -590,9 +639,40 @@ components:
         error: { type: string }
 
   responses:
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Unauthorized: missing or invalid Bearer token"
+    Forbidden:
+      description: Authenticated but not permitted to access this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Forbidden: insufficient permissions"
     Error:
       description: Internal server error
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        Bearer token issued at login. Pass as `Authorization: Bearer <token>`.
+
+        **Current status: NOT enforced.** All endpoints are open in the current
+        server implementation. Authentication middleware must be added to
+        server.ts before production deployment.
+
+        Endpoints that use `security: []` (root health check, device upload)
+        are intentionally exempt from user authentication.
