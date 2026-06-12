@@ -7,10 +7,15 @@ const AlarmList = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getAlarms()
-      .then(d => setAlarms(d))
-      .catch(e => console.error(e))
-      .finally(() => setLoading(false));
+    function loadAlarms() {
+      getAlarms()
+        .then(d => setAlarms(d))
+        .catch(e => console.error(e))
+        .finally(() => setLoading(false));
+    }
+    loadAlarms();
+    const timer = setInterval(loadAlarms, 30_000);
+    return () => clearInterval(timer);
   }, []);
 
   const typeBadge = (type: string): { background: string; color: string } => {

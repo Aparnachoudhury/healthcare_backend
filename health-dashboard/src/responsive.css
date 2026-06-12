@@ -1,0 +1,27 @@
+@media (max-width: 768px) {
+  .device-detail-layout {
+    flex-direction: column !important;
+  }
+
+  .device-detail-sidebar {
+    width: 100% !important;
+  }
+
+  .tab-bar {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+
+  .tab-bar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .device-detail-layout {
+    gap: 12px !important;
+  }
+}

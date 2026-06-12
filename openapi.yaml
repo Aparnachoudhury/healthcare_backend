@@ -9,89 +9,76 @@ info:
 
     ┌──────────────┐        ┌───────────────────┐        ┌────────────────┐        ┌─────────────────────┐
 
-    │              │        │                   │        │                │        │                     │
-
     │   Wearable   │──────▶ │  Stealthera Cloud │──────▶ │   Client API   │──────▶ │  Client Platform    │
 
-    │   Device     │        │                   │        │                │        │                     │
+    │   Device     │        │  Firebase / Node  │        │  (This Doc)    │        │  HIS / EMR / Apps   │
 
     └──────────────┘        └───────────────────┘        └────────────────┘        └─────────────────────┘
-         Stealthera Device          Firebase / Node              REST Endpoints          Hospital Apps / HIS /
-           Smartwatch                  Backend                  (This Document)         EMR / Cloud Infra
     ```
 
 
-    Stealthera exposes standardized APIs which can be consumed by hospital
-    applications, HIS platforms, EMR systems, or client-hosted cloud
-    infrastructure.
-
-
-    ---
-
-
-    ## Overview
-
-
-    This backend receives data from Stealthera Device smartwatches and exposes
-    endpoints for the health dashboard frontend.
+    Stealthera exposes standardized REST APIs consumed by hospital applications,
+    HIS platforms, EMR systems, and client-hosted cloud infrastructure.
 
 
     **Base URL:** `https://api.stealthera.in`
 
-
     **Device ID Example:** `863758060992848`
 
-
-    ---
-
-
-    ### Endpoint Groups
-
-    - **Watch Upload** — binary data posted by the watch firmware
-
-    - **Health Data** — aggregated live device list
-
-    - **Grouped Device** — per-device health metrics returned in grouped batches
-      (one Firestore read per group, used by the dashboard frontend)
-
-    - **More Metrics** — individual per-device endpoints for blood sugar, blood
-      ketone, and uric acid (separate Firestore reads)
-
-    - **Alarms** — event / alert log
+    **All timestamps:** IST (Asia/Kolkata)
 
 
     ---
 
 
-    ## Migration Note
+    ## Versioning
 
-
-    In v1.1 the ten individual device-detail endpoints (`/overview`, `/heartrate`,
-    `/sleep`, `/bloodpressure`, `/bloodoxygen`, `/bodytemp`, `/hearthealth`,
-    `/ecg`, `/pressure`, `/locationtrack`) were consolidated into four grouped
-    endpoints to reduce Firestore read costs. If you were calling any of those
-    legacy paths, migrate to the grouped equivalents below.
+    All endpoints are prefixed with `/v1`. Breaking changes will increment the
+    version prefix to `/v2`.
 
 
     ---
 
 
-    ## Note
+    ## Endpoint Groups
+
+    | Tag | Purpose |
+    |-----|---------|
+    | Watch Upload | Binary data posted by watch firmware |
+    | Health Data | Live device list for the dashboard home |
+    | Grouped Device | Per-device grouped metrics (1 Firestore read per group) |
+    | Device Info | Device metadata, battery, firmware, network |
+    | SOS & Safety Events | SOS, fall, sedentary alarm streams |
+    | More Metrics | Blood sugar, ketone, uric acid |
+    | Alarms | Global alarm / event log |
 
 
-    This document represents the current **v1.1 API specification**.
+    ---
 
 
-    Future versions will include:
+    ## iWown Vendor Capability Status
 
-    - Enhanced authentication and authorization
-
-    - Device-to-patient mapping workflows
-
-    - Expanded monitoring and audit capabilities
-
-    - Advanced integration and interoperability features
-  version: 1.1.0
+    | Capability | Stored in Firestore | Exposed in API | Notes |
+    |---|---|---|---|
+    | Heart rate | Yes | Yes (`/vitals`) | |
+    | SpO2 | Yes | Yes (`/vitals`) | |
+    | Body temperature | Yes | Yes (`/vitals`) | |
+    | Blood pressure | Yes | Yes (`/vitals`) | |
+    | Steps | Yes | Yes (`/wellness`) | |
+    | Distance | If sent by firmware | Yes (`/wellness`) | Returns 0 if not in payload |
+    | Calories | If sent by firmware | Yes (`/wellness`) | Returns 0 if not in payload |
+    | Sleep (total) | Yes | Yes (`/wellness`) | |
+    | Deep / Light / REM sleep | If sent by firmware | Yes (`/wellness`) | Estimated if not in payload |
+    | HRV | If sent by firmware | Yes (`/wellness`) | |
+    | Stress index | If sent by firmware | Yes (`/wellness`) | |
+    | ECG | If sent by firmware | Yes (`/diagnostics`) | |
+    | Location | If sent by firmware | Yes (`/safety`) | |
+    | SOS events | Yes (alarms collection) | Yes (`/sos`) | |
+    | Fall alarms | Yes (alarms collection) | Yes (`/sos`) | |
+    | Sedentary alarms | Yes (alarms collection) | Yes (`/sos`) | |
+    | Call logs | **Not yet** | Returns `[]` | Needs `call_logs` Firestore collection |
+    | Battery / Signal / Firmware | **Not yet** | Returns `null` | Firmware must send in payload |
+  version: 2.0.0
 servers:
   - url: https://api.stealthera.in
 tags:
@@ -99,25 +86,23 @@ tags:
   - name: Watch Upload
   - name: Health Data
   - name: Grouped Device
-    description: >-
-      Grouped endpoints — each call triggers one Firestore history read and
-      returns all metrics for that group. Used by the dashboard frontend to
-      minimise cloud read costs.
+    description: One Firestore read per group. Used by the dashboard frontend.
+  - name: Device Info
+    description: Device metadata from the live_devices collection.
+  - name: SOS & Safety Events
+    description: SOS, fall, and sedentary alarm streams filtered from the alarms collection.
   - name: More Metrics
-    description: >-
-      Individual endpoints for blood sugar, blood ketone, and uric acid. Each
-      triggers its own Firestore read and is used by the "More" tabs in the
-      dashboard.
+    description: Blood sugar, blood ketone, uric acid — individual Firestore reads.
   - name: Alarms
+    description: Global alarm log across all devices.
+
 paths:
   /:
     get:
       tags:
         - Health Check
       summary: Root — API Status
-      description: >-
-        Simple health-check endpoint. Returns a plain-text confirmation that the
-        API server is running.
+      description: Returns plain-text confirmation that the API server is running.
       responses:
         '200':
           description: API is running
@@ -125,14 +110,14 @@ paths:
             text/plain:
               example: API is running
 
-  /4g/pb/upload:
+  /v1/4g/pb/upload:
     post:
       tags:
         - Watch Upload
       summary: Upload Watch Data (binary)
       description: >-
-        Receives a binary protobuf payload from an Stealthera Device smartwatch
-        and persists it to Firestore.
+        Receives a binary protobuf payload from a Stealthera smartwatch and
+        persists it to Firestore.
 
 
         **Collections written:**
@@ -142,34 +127,44 @@ paths:
         - `healthData` — append-only log with `receivedAt` timestamp
 
 
-        **Response:** A single raw `0x00` byte (`application/octet-stream`). The
-        Stealthera Device test tool validates exactly this byte — do not change
-        the response format.
+        **Response:** A single raw `0x00` byte (`application/octet-stream`).
 
 
-        **Expected parsed payload fields (decoded.data):**
+        **Payload fields decoded from `decoded.data`:**
 
         | Field | Type | Description |
-
         |---|---|---|
-
         | `device_id` | string | Device IMEI |
-
-        | `heart_rate_bpm` | number | Beats per minute |
-
-        | `spo2_percent` | number | Blood oxygen % |
-
-        | `body_temperature_c` | number | Body temp in °C |
-
+        | `heart_rate_bpm` | number | BPM |
+        | `spo2_percent` | number | SpO2 % |
+        | `body_temperature_c` | number | °C |
         | `steps` | number | Step count |
-
-        | `phone_number` | string | Associated phone number |
+        | `distance` | number | Distance in metres |
+        | `calories` | number | Calories burned |
+        | `sleep_hours` | number | Total sleep hours |
+        | `deep_sleep_minutes` | number | Deep sleep |
+        | `light_sleep_minutes` | number | Light sleep |
+        | `rem_sleep_minutes` | number | REM sleep |
+        | `hrv_ms` | number | HRV in ms |
+        | `stress_score` | number | Stress index 0–100 |
+        | `bp_systolic_mmhg` | number | Systolic mmHg |
+        | `bp_diastolic_mmhg` | number | Diastolic mmHg |
+        | `blood_sugar` | number | mmol/L |
+        | `blood_ketone` | number | mmol/L |
+        | `uric_acid` | number | μmol/L |
+        | `ecg_records` | number[] | ECG waveform points |
+        | `battery_level` | number | Battery % |
+        | `signal_strength` | number | Signal dBm |
+        | `network_type` | string | e.g. `4G` |
+        | `network_operator` | string | Operator name |
+        | `sim_iccid` | string | SIM ICCID |
+        | `firmware_version` | string | Firmware build |
+        | `phone_number` | string | Associated phone |
       parameters:
         - name: Content-Type
           in: header
           schema:
             type: string
-          description: Must be octet-stream — the watch firmware sends a raw binary payload
           example: application/octet-stream
       requestBody:
         content:
@@ -186,43 +181,30 @@ paths:
                 type: string
                 format: binary
 
-  /api/health-data:
+  /v1/api/health-data:
     get:
       tags:
         - Health Data
       summary: Get All Devices — Live Health Data
       description: >-
-        Returns a list of all registered devices with their latest health
-        metrics pulled from the `live_devices` Firestore collection.
-
+        Returns all registered devices with their latest metrics from
+        `live_devices`.
 
         **Response fields per device:**
 
         | Field | Type | Description |
-
         |---|---|---|
-
         | `id` | string | Device ID |
-
-        | `nickname` | string | Human-readable label (defaults to device ID) |
-
-        | `model` | string | Device model (default: `H102CSH`) |
-
-        | `deviceId` | string | IMEI / device identifier |
-
+        | `nickname` | string | Human-readable label |
+        | `model` | string | Device model |
+        | `deviceId` | string | IMEI |
         | `status` | string | `Online` / `Offline` |
-
-        | `steps` | number | Current step count |
-
-        | `heartRate` | number | Heart rate in BPM |
-
-        | `bloodOxygen` | number | SpO2 percentage |
-
-        | `bodyTemp` | number | Body temperature in °C |
-
-        | `phone` | string | Associated phone number |
-
-        | `updateTime` | string | Timestamp of last update (IST) |
+        | `steps` | number | Step count |
+        | `heartRate` | number | BPM |
+        | `bloodOxygen` | number | SpO2 % |
+        | `bodyTemp` | number | °C |
+        | `phone` | string | Phone number |
+        | `updateTime` | string | Last update (IST) |
       responses:
         '200':
           description: Array of device rows
@@ -244,67 +226,26 @@ paths:
                     bodyTemp:    { type: number }
                     phone:       { type: string }
                     updateTime:  { type: string }
+        '500':
+          $ref: '#/components/responses/Error'
 
-  /api/device/{deviceId}/vitals:
+  /v1/api/device/{deviceId}/vitals:
     get:
       tags:
         - Grouped Device
       summary: Vitals — Heart Rate, Blood Pressure, Blood Oxygen, Body Temp
       description: >-
-        Returns all vital-sign metrics for a device in a single response.
-        Triggers **one** Firestore history read.
+        Returns all vital-sign metrics in one call (1 Firestore read).
 
 
-        **Replaces individual endpoints:** `/heartrate`, `/bloodpressure`,
-        `/bloodoxygen`, `/bodytemp`
-
-
-        **Response shape:**
-
-        ```json
-
-        {
-          "deviceId": "string",
-          "heartrate":     { "deviceId", "series", "average", "max", "min" },
-          "bloodpressure": { "deviceId", "date", "series", "avgSystolic", "avgDiastolic", "warningRecords" },
-          "bloodoxygen":   { "deviceId", "series", "average", "max", "min", "warningRecords" },
-          "bodytemp":      { "deviceId", "date", "series", "average", "max", "min", "warningRecords" }
-        }
-
-        ```
-
-
-        **Sub-field details:**
-
-        | Sub-object | Field | Type | Description |
-
-        |---|---|---|---|
-
-        | `heartrate` | `series` | array | `[{ time: string, value: number }]` — BPM readings |
-
-        | `heartrate` | `average` / `max` / `min` | number | BPM stats |
-
-        | `bloodpressure` | `series` | array | `[{ time, systolic, diastolic }]` — 24 hourly readings |
-
-        | `bloodpressure` | `avgSystolic` / `avgDiastolic` | number | mmHg averages |
-
-        | `bloodpressure` | `warningRecords` | array | Readings that exceeded safe thresholds |
-
-        | `bloodoxygen` | `series` | array | `[{ time: string, value: number }]` — SpO2 readings |
-
-        | `bloodoxygen` | `warningRecords` | array | Readings below safe threshold |
-
-        | `bodytemp` | `series` | array | `[{ time: string, value: number }]` — °C readings |
-
-        | `bodytemp` | `warningRecords` | array | Readings outside normal range |
+        | Sub-key | Fields |
+        |---|---|
+        | `heartrate` | `series[]{time,value}`, `average`, `max`, `min` |
+        | `bloodpressure` | `series[]{time,systolic,diastolic}`, `avgSystolic`, `avgDiastolic`, `warningRecords` |
+        | `bloodoxygen` | `series[]{time,value}`, `average`, `max`, `min`, `warningRecords` |
+        | `bodytemp` | `series[]{time,value}`, `average`, `max`, `min`, `warningRecords` |
       parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-          description: Device IMEI
-          example: '863758060992848'
+        - $ref: '#/components/parameters/deviceId'
       responses:
         '200':
           description: Vitals group
@@ -313,87 +254,37 @@ paths:
               schema:
                 type: object
                 properties:
-                  deviceId:     { type: string }
-                  heartrate:    { type: object }
+                  deviceId:      { type: string }
+                  heartrate:     { type: object }
                   bloodpressure: { type: object }
-                  bloodoxygen:  { type: object }
-                  bodytemp:     { type: object }
+                  bloodoxygen:   { type: object }
+                  bodytemp:      { type: object }
         '500':
-          description: Firestore read error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error: { type: string }
+          $ref: '#/components/responses/Error'
 
-  /api/device/{deviceId}/wellness:
+  /v1/api/device/{deviceId}/wellness:
     get:
       tags:
         - Grouped Device
-      summary: Wellness — Overview, Sleep, Heart Health, Pressure (Stress)
+      summary: Wellness — Overview, Sleep, Heart Health, Stress
       description: >-
-        Returns wellness metrics for a device in a single response.
-        Triggers **two** parallel Firestore reads (`healthData` history +
-        `live_devices` fallback for the overview snapshot).
+        Returns wellness metrics in one call (2 parallel Firestore reads:
+        `healthData` history + `live_devices` fallback).
 
 
-        **Replaces individual endpoints:** `/overview`, `/sleep`, `/hearthealth`,
-        `/pressure`
+        | Sub-key | Key Fields |
+        |---|---|
+        | `overview` | `steps`, `heartRate`, `bloodOxygen`, `bodyTemp`, `sleepHours`, `distance`, `calories`, `bloodPressure{systolic,diastolic}` |
+        | `sleep` | `totalMinutes`, `deepSleepMinutes`, `lightSleepMinutes`, `remSleepMinutes`, `sleepScore`, `apneaRisk`, `series[]{time,stage}` |
+        | `hearthealth` | `diagnosis`, `afibRisk`, `hrvScore`, `series[]{time,value}` |
+        | `pressure` | `average`, `level`, `series[]{time,value}` |
 
 
-        **Response shape:**
+        **`apneaRisk`** is `"Unknown"` until the watch firmware sends apnea data.
 
-        ```json
-
-        {
-          "deviceId": "string",
-          "overview":    { "deviceId", "date", "steps", "heartRate", "bloodOxygen", "bodyTemp", "sleepHours", "bloodPressure" },
-          "sleep":       { "deviceId", "date", "totalMinutes", "series", "deepSleepMinutes", "lightSleepMinutes", "awakeTimes", "sleepScore" },
-          "hearthealth": { "deviceId", "date", "diagnosis", "afibRisk", "hrvScore", "series" },
-          "pressure":    { "deviceId", "date", "series", "average", "level" }
-        }
-
-        ```
-
-
-        **Sub-field details:**
-
-        | Sub-object | Field | Type | Description |
-
-        |---|---|---|---|
-
-        | `overview` | `steps` | number | Step count |
-
-        | `overview` | `heartRate` | number | BPM |
-
-        | `overview` | `bloodOxygen` | number | SpO2 % |
-
-        | `overview` | `bodyTemp` | number | °C |
-
-        | `overview` | `sleepHours` | number | Total sleep hours |
-
-        | `overview` | `bloodPressure` | object | `{ systolic, diastolic }` mmHg |
-
-        | `sleep` | `series` | array | `[{ time, stage }]` — 0=awake, 1=light, 2=deep |
-
-        | `sleep` | `sleepScore` | number | Score 0–100 |
-
-        | `hearthealth` | `afibRisk` | string | `Low` / `Medium` / `High` |
-
-        | `hearthealth` | `hrvScore` | number | HRV score 0–100 |
-
-        | `pressure` | `series` | array | `[{ time, value }]` — stress index 0–100 |
-
-        | `pressure` | `level` | string | `Low` / `Normal` / `High` |
+        **`remSleepMinutes`** is estimated (20% of total) if the firmware does not send `rem_sleep_minutes`.
       parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-          description: Device IMEI
-          example: '863758060992848'
+        - $ref: '#/components/parameters/deviceId'
       responses:
         '200':
           description: Wellness group
@@ -408,65 +299,23 @@ paths:
                   hearthealth: { type: object }
                   pressure:    { type: object }
         '500':
-          description: Firestore read error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error: { type: string }
+          $ref: '#/components/responses/Error'
 
-  /api/device/{deviceId}/diagnostics:
+  /v1/api/device/{deviceId}/diagnostics:
     get:
       tags:
         - Grouped Device
       summary: Diagnostics — ECG
       description: >-
-        Returns ECG records and AI interpretation for a device.
-        Triggers **one** Firestore history read.
+        Returns ECG records and AI interpretation (1 Firestore read).
 
-
-        **Replaces individual endpoint:** `/ecg`
-
-
-        **Response shape:**
-
-        ```json
-
-        {
-          "deviceId": "string",
-          "ecg": {
-            "deviceId": "string",
-            "date": "YYYY-MM-DD",
-            "records": [{ "time": "string", "wave": [number] }],
-            "aiResult": "string"
-          }
-        }
-
-        ```
-
-
-        **ECG sub-fields:**
 
         | Field | Type | Description |
-
         |---|---|---|
-
-        | `records` | array | ECG measurement records (empty if no readings taken) |
-
-        | `records[].time` | string | Measurement timestamp (IST) |
-
-        | `records[].wave` | number[] | Raw ECG waveform data points |
-
-        | `aiResult` | string | AI-generated ECG interpretation |
+        | `ecg.records` | array | `[{time, wave: number[]}]` — empty if no ECG uploaded |
+        | `ecg.aiResult` | string | AI interpretation text |
       parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-          description: Device IMEI
-          example: '863758060992848'
+        - $ref: '#/components/parameters/deviceId'
       responses:
         '200':
           description: Diagnostics group
@@ -478,81 +327,25 @@ paths:
                   deviceId: { type: string }
                   ecg:      { type: object }
         '500':
-          description: Firestore read error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error: { type: string }
+          $ref: '#/components/responses/Error'
 
-  /api/device/{deviceId}/safety:
+  /v1/api/device/{deviceId}/safety:
     get:
       tags:
         - Grouped Device
       summary: Safety — Location Track + Device Alarms
       description: >-
-        Returns GPS location history and device-scoped alarm log in a single
-        response. Triggers **two** parallel Firestore reads (`healthData`
-        history + `alarms` filtered by `deviceId`).
+        Returns GPS location history and all device-scoped alarms (2 parallel
+        Firestore reads).
 
-
-        **Replaces individual endpoint:** `/locationtrack`
-
-        **Adds:** device-scoped alarm list (previously only available via
-        the global `/api/alarms` endpoint).
-
-
-        **Response shape:**
-
-        ```json
-
-        {
-          "deviceId": "string",
-          "locationtrack": {
-            "deviceId": "string",
-            "date": "YYYY-MM-DD",
-            "tracks": [{ "lat": number, "lng": number, "time": "string" }],
-            "lastLocation": { "lat": number, "lng": number } | null
-          },
-          "alarms": [{ "id", "nickname", "deviceId", "type", "time", "location", "content" }]
-        }
-
-        ```
-
-
-        **Location sub-fields:**
 
         | Field | Type | Description |
-
         |---|---|---|
-
-        | `tracks` | array | GPS points — empty while location features are under development |
-
-        | `lastLocation` | object\|null | Most recent GPS fix, or `null` |
-
-
-        **Alarm fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `id` | string | Alarm document ID |
-
-        | `type` | string | `Not worn` / `Sleep` / `Heart rate warning` |
-
-        | `time` | string | Timestamp (IST, YYYY-MM-DD HH:mm:ss) |
-
-        | `content` | string | Human-readable description |
+        | `locationtrack.tracks` | array | `[{lat, lng, time}]` GPS points |
+        | `locationtrack.lastLocation` | object\|null | Most recent fix |
+        | `alarms` | array | All alarms for this device (all types) |
       parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-          description: Device IMEI
-          example: '863758060992848'
+        - $ref: '#/components/parameters/deviceId'
       responses:
         '200':
           description: Safety group
@@ -563,217 +356,183 @@ paths:
                 properties:
                   deviceId:      { type: string }
                   locationtrack: { type: object }
-                  alarms:
-                    type: array
-                    items: { type: object }
+                  alarms:        { type: array, items: { type: object } }
         '500':
-          description: Firestore read error
+          $ref: '#/components/responses/Error'
+
+  /v1/api/device/{deviceId}/info:
+    get:
+      tags:
+        - Device Info
+      summary: Device Info — Firmware, Battery, Network, SIM
+      description: >-
+        Returns device metadata from the `live_devices` Firestore document.
+
+        Fields that depend on firmware payload (marked *) return `null` until
+        the watch sends them.
+
+
+        | Field | Type | Description |
+        |---|---|---|
+        | `model` | string | Device model |
+        | `firmwareVersion` | string\|null | Firmware version * |
+        | `battery` | number\|null | Battery % * |
+        | `signal` | number\|null | Signal strength dBm * |
+        | `networkType` | string\|null | e.g. `4G` * |
+        | `networkOperator` | string\|null | Operator name * |
+        | `simIccid` | string\|null | SIM ICCID * |
+        | `phone` | string\|null | Associated phone number |
+        | `status` | string | `Online` / `Offline` |
+        | `lastSeen` | string | Last upload timestamp (IST) |
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      responses:
+        '200':
+          description: Device info
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  error: { type: string }
+                  deviceId:        { type: string }
+                  model:           { type: string }
+                  firmwareVersion: { type: string, nullable: true }
+                  battery:         { type: number, nullable: true }
+                  signal:          { type: number, nullable: true }
+                  networkType:     { type: string, nullable: true }
+                  networkOperator: { type: string, nullable: true }
+                  simIccid:        { type: string, nullable: true }
+                  phone:           { type: string, nullable: true }
+                  status:          { type: string }
+                  lastSeen:        { type: string }
+        '500':
+          $ref: '#/components/responses/Error'
 
-  /api/device/{deviceId}/bloodsugar:
+  /v1/api/device/{deviceId}/sos:
+    get:
+      tags:
+        - SOS & Safety Events
+      summary: SOS Events, Fall Alarms, Sedentary Alerts
+      description: >-
+        Returns SOS events, fall alarms, and sedentary alerts for a device,
+        filtered from the `alarms` collection by `type` field.
+
+
+        **`callLogs`** always returns `[]` until a `call_logs` Firestore
+        collection is populated by the watch firmware.
+
+
+        | Field | Type | Description |
+        |---|---|---|
+        | `sosEvents` | array | Alarms where `type` matches `/sos/i` |
+        | `fallAlarms` | array | Alarms where `type` matches `/fall/i` |
+        | `sedentaryAlarms` | array | Alarms where `type` matches `/sedentary/i` |
+        | `callLogs` | array | Always `[]` — requires `call_logs` collection |
+
+
+        **Each alarm object:**
+
+        | Field | Type | Description |
+        |---|---|---|
+        | `id` | string | Alarm document ID |
+        | `type` | string | Alarm type string |
+        | `time` | string | Timestamp (IST) |
+        | `location` | string | GPS string (if available) |
+        | `content` | string | Human-readable description |
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      responses:
+        '200':
+          description: SOS and safety events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId:        { type: string }
+                  sosEvents:       { type: array, items: { type: object } }
+                  fallAlarms:      { type: array, items: { type: object } }
+                  sedentaryAlarms: { type: array, items: { type: object } }
+                  callLogs:        { type: array, items: { type: object } }
+        '500':
+          $ref: '#/components/responses/Error'
+
+  /v1/api/device/{deviceId}/bloodsugar:
     get:
       tags:
         - More Metrics
       summary: Blood Sugar
-      description: >-
-        Returns blood sugar time-series data for a device. Triggers one
-        Firestore history read.
-
-
-        **Response fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `deviceId` | string | Device IMEI |
-
-        | `date` | string | Date (YYYY-MM-DD) |
-
-        | `series` | array | `[{ time: string, value: number }]` — readings in mmol/L |
-
-        | `average` | number | Average blood sugar |
-
-        | `max` | number | Maximum reading |
-
-        | `min` | number | Minimum reading |
       parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-          description: Device IMEI
-          example: '863758060992848'
+        - $ref: '#/components/parameters/deviceId'
       responses:
         '200':
           description: Blood sugar series
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  deviceId: { type: string }
-                  date:     { type: string }
-                  series:   { type: array, items: { type: object } }
-                  average:  { type: number }
-                  max:      { type: number }
-                  min:      { type: number }
+                $ref: '#/components/schemas/SimpleSeriesData'
         '500':
-          description: Firestore read error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error: { type: string }
+          $ref: '#/components/responses/Error'
 
-  /api/device/{deviceId}/bloodketone:
+  /v1/api/device/{deviceId}/bloodketone:
     get:
       tags:
         - More Metrics
       summary: Blood Ketone
-      description: >-
-        Returns blood ketone time-series data for a device. Triggers one
-        Firestore history read.
-
-
-        **Response fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `deviceId` | string | Device IMEI |
-
-        | `date` | string | Date (YYYY-MM-DD) |
-
-        | `series` | array | `[{ time: string, value: number }]` — readings in mmol/L |
-
-        | `average` | number | Average ketone level |
-
-        | `max` | number | Maximum reading |
-
-        | `min` | number | Minimum reading |
       parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-          description: Device IMEI
-          example: '863758060992848'
+        - $ref: '#/components/parameters/deviceId'
       responses:
         '200':
           description: Blood ketone series
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  deviceId: { type: string }
-                  date:     { type: string }
-                  series:   { type: array, items: { type: object } }
-                  average:  { type: number }
-                  max:      { type: number }
-                  min:      { type: number }
+                $ref: '#/components/schemas/SimpleSeriesData'
         '500':
-          description: Firestore read error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error: { type: string }
+          $ref: '#/components/responses/Error'
 
-  /api/device/{deviceId}/uricacid:
+  /v1/api/device/{deviceId}/uricacid:
     get:
       tags:
         - More Metrics
       summary: Uric Acid
-      description: >-
-        Returns uric acid time-series data for a device. Triggers one
-        Firestore history read.
-
-
-        **Response fields:**
-
-        | Field | Type | Description |
-
-        |---|---|---|
-
-        | `deviceId` | string | Device IMEI |
-
-        | `date` | string | Date (YYYY-MM-DD) |
-
-        | `series` | array | `[{ time: string, value: number }]` — readings in mg/dL |
-
-        | `average` | number | Average uric acid level |
-
-        | `max` | number | Maximum reading |
-
-        | `min` | number | Minimum reading |
       parameters:
-        - name: deviceId
-          in: path
-          schema:
-            type: string
-          required: true
-          description: Device IMEI
-          example: '863758060992848'
+        - $ref: '#/components/parameters/deviceId'
       responses:
         '200':
           description: Uric acid series
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  deviceId: { type: string }
-                  date:     { type: string }
-                  series:   { type: array, items: { type: object } }
-                  average:  { type: number }
-                  max:      { type: number }
-                  min:      { type: number }
+                $ref: '#/components/schemas/SimpleSeriesData'
         '500':
-          description: Firestore read error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error: { type: string }
+          $ref: '#/components/responses/Error'
 
-  /api/alarms:
+  /v1/api/alarms:
     get:
       tags:
         - Alarms
       summary: Get Alarm List (All Devices)
-      description: |-
-        Returns the full alarm / event log across all devices, sorted newest
-        first. For alarms scoped to a single device, use
-        `GET /api/device/{deviceId}/safety` instead.
+      description: >-
+        Returns the full alarm log across all devices, sorted newest first.
 
-        **Alarm types:**
-        - `Not worn` — watch detected it is not being worn
-        - `Sleep` — watch entered sleep mode
-        - `Heart rate warning` — heart rate exceeded safe threshold
+        For device-scoped SOS/fall/sedentary events use
+        `GET /v1/api/device/{deviceId}/sos`.
 
-        **Response fields per alarm:**
+
+        **Alarm types:** `Not worn`, `Sleep`, `Heart rate warning`, `SOS`,
+        `Fall detected`, `Sedentary alert`
+
+
         | Field | Type | Description |
         |---|---|---|
         | `id` | string | Alarm document ID |
-        | `nickname` | string | Device owner nickname (may be empty) |
+        | `nickname` | string | Device owner nickname |
         | `deviceId` | string | Device IMEI |
         | `type` | string | Alarm type |
-        | `time` | string | Timestamp (IST, YYYY-MM-DD HH:mm:ss) |
-        | `location` | string | GPS location string (empty if unavailable) |
-        | `content` | string | Human-readable alarm description |
+        | `time` | string | Timestamp (IST) |
+        | `location` | string | GPS string (empty if unavailable) |
+        | `content` | string | Human-readable description |
       responses:
         '200':
           description: Array of alarms sorted newest first
@@ -782,20 +541,58 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    id:       { type: string }
-                    nickname: { type: string }
-                    deviceId: { type: string }
-                    type:     { type: string }
-                    time:     { type: string }
-                    location: { type: string }
-                    content:  { type: string }
+                  $ref: '#/components/schemas/AlarmRow'
         '500':
-          description: Firestore read error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error: { type: string }
+          $ref: '#/components/responses/Error'
+
+components:
+  parameters:
+    deviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Device IMEI
+      example: '863758060992848'
+
+  schemas:
+    AlarmRow:
+      type: object
+      properties:
+        id:       { type: string }
+        nickname: { type: string }
+        deviceId: { type: string }
+        type:     { type: string }
+        time:     { type: string }
+        location: { type: string }
+        content:  { type: string }
+
+    SimpleSeriesData:
+      type: object
+      properties:
+        deviceId: { type: string }
+        date:     { type: string }
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              time:  { type: string }
+              value: { type: number }
+        average: { type: number }
+        max:     { type: number }
+        min:     { type: number }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+  responses:
+    Error:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

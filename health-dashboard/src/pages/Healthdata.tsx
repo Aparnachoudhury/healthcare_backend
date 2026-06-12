@@ -1,4 +1,4 @@
-import { useEffect, useState, CSSProperties } from "react";
+import { useEffect, useState, useMemo, CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { getHealthData } from "../api/api";
 import type { DeviceRow } from "../types";
@@ -15,27 +15,25 @@ const Healthdata = () => {
   const PAGE_SIZE = 10;
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const response = await getHealthData();
-        setRaw(response);
-      } catch (err) {
-        console.error("API ERROR:", err);
-      } finally {
-        setLoading(false);
-      }
+    function loadData() {
+      getHealthData()
+        .then(setRaw)
+        .catch(err => console.error("API ERROR:", err))
+        .finally(() => setLoading(false));
     }
     loadData();
+    const timer = setInterval(loadData, 30_000);
+    return () => clearInterval(timer);
   }, []);
 
-  const filtered = raw.filter(d =>
+  const filtered = useMemo(() => raw.filter(d =>
     (d.deviceId || "").toLowerCase().includes(applied.deviceId.toLowerCase()) &&
     (d.nickname || "").toLowerCase().includes(applied.nickname.toLowerCase()) &&
     (d.phone || "").includes(applied.phone)
-  );
+  ), [raw, applied]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)), [filtered]);
+  const rows = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
 
   const handleSearch = () => { setApplied({ ...search }); setPage(1); };
   const handleReset  = () => { const e: SearchState = { deviceId: "", nickname: "", phone: "" }; setSearch(e); setApplied(e); setPage(1); };

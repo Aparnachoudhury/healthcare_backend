@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { getVitals, getWellness, getDiagnostics, getSafety } from "../../api/api";
+import { getVitals, getWellness, getDiagnostics, getSafety, getDeviceInfo } from "../../api/api";
 import type { VitalsData, WellnessData, DiagnosticsData, SafetyData } from "../../types";
 import Overview from "./Overview";
 import HeartRate from "./HeartRate";
@@ -28,23 +28,32 @@ const DeviceDetail = () => {
   const [wellness,    setWellness]    = useState<WellnessData | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsData | null>(null);
   const [safety,      setSafety]      = useState<SafetyData | null>(null);
+  const [deviceInfo,  setDeviceInfo]  = useState<Record<string, any> | null>(null);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     if (!id) return;
     Promise.all([
       getVitals(id),
       getWellness(id),
       getDiagnostics(id),
       getSafety(id),
-    ]).then(([v, w, d, s]) => {
+      getDeviceInfo(id),
+    ]).then(([v, w, d, s, info]) => {
       setVitals(v);
       setWellness(w);
       setDiagnostics(d);
       setSafety(s);
+      setDeviceInfo(info);
     }).catch(err => console.error(err));
   }, [id]);
 
-  const renderTab = () => {
+  useEffect(() => {
+    loadData();
+    const timer = setInterval(loadData, 30_000);
+    return () => clearInterval(timer);
+  }, [loadData]);
+
+  const tabContent = useMemo(() => {
     switch (activeTab) {
       case "Overview":          return <Overview      data={wellness?.overview} />;
       case "Exercise":          return <Overview      data={wellness?.overview} />;
@@ -62,11 +71,11 @@ const DeviceDetail = () => {
       case "Uric Acid":         return <UricAcid />;
       default:                  return null;
     }
-  };
+  }, [activeTab, vitals, wellness, diagnostics, safety]);
 
   return (
-    <div style={{ display: "flex", gap: "20px" }}>
-      <div style={{ width: "220px", flexShrink: 0 }}>
+    <div className="device-detail-layout" style={{ display: "flex", gap: "20px" }}>
+      <div className="device-detail-sidebar" style={{ width: "220px", flexShrink: 0 }}>
         <div style={{ background: "#fff", borderRadius: "8px", padding: "16px", marginBottom: "12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
             <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>👤</div>
@@ -83,13 +92,24 @@ const DeviceDetail = () => {
         <div style={{ background: "#fff", borderRadius: "8px", padding: "12px", fontSize: "12px" }}>
           <div style={{ fontWeight: 600, marginBottom: "6px", color: "#1a6ef5" }}>■ Device Information</div>
           <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Device ID: {id}</div>
-          <div style={{ color: "#52c41a", fontSize: "11px" }}>● Online · 2 #s</div>
+          {deviceInfo ? (
+            <div style={{ color: "var(--text-muted)", lineHeight: 1.8 }}>
+              <div>Model: {deviceInfo.model ?? "N/A"}</div>
+              <div>Battery: {deviceInfo.battery != null ? `${deviceInfo.battery}%` : "N/A"}</div>
+              <div>Signal: {deviceInfo.signal ?? "N/A"}</div>
+              <div>Network: {deviceInfo.networkType ?? "N/A"}</div>
+              <div>Firmware: {deviceInfo.firmwareVersion ?? "N/A"}</div>
+              <div>Last Seen: {deviceInfo.lastSeen || "N/A"}</div>
+            </div>
+          ) : (
+            <div style={{ color: "#52c41a", fontSize: "11px" }}>● Online · 2 #s</div>
+          )}
         </div>
       </div>
 
       <div style={{ flex: 1 }}>
         <div style={{ position: "relative" }}>
-          <div style={{ display: "flex", gap: "4px", marginBottom: "16px", flexWrap: "wrap", alignItems: "center" }}>
+          <div className="tab-bar" style={{ display: "flex", gap: "4px", marginBottom: "16px", flexWrap: "wrap", alignItems: "center" }}>
             {tabs.map(tab => (
               <button key={tab} onClick={() => { setActiveTab(tab); setShowMore(false); }}
                 style={{ padding: "6px 14px", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: "13px", background: activeTab === tab ? "var(--accent-blue)" : "#f0f0f0", color: activeTab === tab ? "#fff" : "var(--text-muted)" }}>
@@ -113,7 +133,7 @@ const DeviceDetail = () => {
           )}
         </div>
         <div style={{ background: "#fff", borderRadius: "8px", padding: "20px" }}>
-          {renderTab()}
+          {tabContent}
         </div>
       </div>
     </div>

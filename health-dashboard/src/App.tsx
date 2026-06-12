@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import "./responsive.css";
 import DashboardLayout from "./components/DashboardLayout";
 import Healthdata from "./pages/Healthdata";
 import AlarmList from "./pages/AlarmList";

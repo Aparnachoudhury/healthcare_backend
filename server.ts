@@ -30,6 +30,9 @@ interface HealthRecord {
   spo2: number;
   bodyTemp: number;
   sleepHours: number;
+  deepSleepMinutes: number;
+  lightSleepMinutes: number;
+  remSleepMinutes: number;
   systolic: number;
   diastolic: number;
   hrv: number;
@@ -37,6 +40,8 @@ interface HealthRecord {
   bloodSugar: number;
   bloodKetone: number;
   uricAcid: number;
+  distance: number;
+  calories: number;
   location: { lat: number; lng: number } | null;
   ecgRecords: number[];
 }
@@ -101,16 +106,21 @@ async function getDeviceHealthHistory(deviceId: string): Promise<HealthRecord[]>
       heartRate:   Number(inner.heart_rate_bpm ?? inner.heart_rate ?? inner.heartRate ?? 0),
       spo2:        Number(inner.spo2_percent ?? inner.spo2 ?? 0),
       bodyTemp:    Number(inner.body_temperature_c ?? inner.temperature ?? inner.bodyTemp ?? 0),
-      sleepHours:  Number(inner.sleep_hours ?? inner.sleepHours ?? 0),
-      systolic:    Number(inner.bp_systolic_mmhg ?? inner.systolic ?? 0),
-      diastolic:   Number(inner.bp_diastolic_mmhg ?? inner.diastolic ?? 0),
-      hrv:         Number(inner.hrv_ms ?? inner.hrvScore ?? 0),
-      stress:      Number(inner.stress_score ?? inner.stress ?? 0),
-      bloodSugar:  Number(inner.blood_sugar ?? inner.bloodsugar ?? 0),
-      bloodKetone: Number(inner.blood_ketone ?? inner.bloodketone ?? 0),
-      uricAcid:    Number(inner.uric_acid ?? inner.uricacid ?? 0),
-      location:    inner.location || (inner.latitude && inner.longitude ? { lat: inner.latitude, lng: inner.longitude } : null),
-      ecgRecords:  inner.ecg_records || [],
+      sleepHours:        Number(inner.sleep_hours ?? inner.sleepHours ?? 0),
+      deepSleepMinutes:  Number(inner.deep_sleep_minutes ?? inner.deepSleepMinutes ?? 0),
+      lightSleepMinutes: Number(inner.light_sleep_minutes ?? inner.lightSleepMinutes ?? 0),
+      remSleepMinutes:   Number(inner.rem_sleep_minutes ?? inner.remSleepMinutes ?? 0),
+      systolic:          Number(inner.bp_systolic_mmhg ?? inner.systolic ?? 0),
+      diastolic:         Number(inner.bp_diastolic_mmhg ?? inner.diastolic ?? 0),
+      hrv:               Number(inner.hrv_ms ?? inner.hrvScore ?? 0),
+      stress:            Number(inner.stress_score ?? inner.stress ?? 0),
+      bloodSugar:        Number(inner.blood_sugar ?? inner.bloodsugar ?? 0),
+      bloodKetone:       Number(inner.blood_ketone ?? inner.bloodketone ?? 0),
+      uricAcid:          Number(inner.uric_acid ?? inner.uricacid ?? 0),
+      distance:          Number(inner.distance ?? inner.distance_m ?? 0),
+      calories:          Number(inner.calories ?? inner.calorie ?? 0),
+      location:          inner.location || (inner.latitude && inner.longitude ? { lat: inner.latitude, lng: inner.longitude } : null),
+      ecgRecords:        inner.ecg_records || [],
     });
   });
 
@@ -133,6 +143,8 @@ function buildOverview(deviceId: string, history: HealthRecord[], liveFallback?:
     bloodOxygen: latest.spo2 || 0,
     bodyTemp: latest.bodyTemp || 0,
     sleepHours: latest.sleepHours || 0,
+    distance: latest.distance || 0,
+    calories: latest.calories || 0,
     bloodPressure: { systolic: latest.systolic || 0, diastolic: latest.diastolic || 0 },
   };
 }
@@ -153,15 +165,24 @@ function buildSleep(deviceId: string, history: HealthRecord[]) {
   const records = history.filter(r => r.sleepHours > 0);
   const latest = records.length ? records[records.length - 1] : null;
   const totalMinutes = latest ? Math.round(latest.sleepHours * 60) : 0;
+  // Use real firmware values only — never estimate sleep stages from total hours
+  const deepMin  = latest?.deepSleepMinutes  ?? 0;
+  const remMin   = latest?.remSleepMinutes   ?? 0;
+  const lightMin = latest?.lightSleepMinutes ?? 0;
+  const stagesAvailable = deepMin > 0 || remMin > 0 || lightMin > 0;
   return {
     deviceId,
     date: latest ? istDate(latest.timestamp) : istDate(new Date()),
     totalMinutes,
     series: records.map(r => ({ time: istTime(r.timestamp), stage: r.sleepHours > 6 ? 2 : r.sleepHours > 4 ? 1 : 0 })),
-    deepSleepMinutes: Math.round(totalMinutes * 0.3),
-    lightSleepMinutes: Math.round(totalMinutes * 0.7),
+    deepSleepMinutes: deepMin,
+    lightSleepMinutes: lightMin,
+    remSleepMinutes: remMin,
+    stagesAvailable,
     awakeTimes: latest ? 1 : 0,
     sleepScore: totalMinutes > 480 ? 90 : totalMinutes > 360 ? 75 : totalMinutes > 0 ? 60 : 0,
+    sleepScoreNote: "Calculated from total sleep duration. Not a clinical measurement.",
+    apneaRisk: "Unknown",
   };
 }
 
@@ -283,6 +304,41 @@ function buildUricAcid(deviceId: string, history: HealthRecord[]) {
   };
 }
 
+async function buildInfo(deviceId: string): Promise<Record<string, any>> {
+  const liveDoc = await db.collection("live_devices").doc(deviceId).get();
+  if (!liveDoc.exists) return { deviceId, error: "Device not found" };
+  const d = liveDoc.data() as Record<string, any>;
+  const inner = d?.decoded?.data || d || {};
+  let lastSeen = "";
+  if (d.receivedAt) lastSeen = istDateTime(d.receivedAt.toDate ? d.receivedAt.toDate() : new Date(d.receivedAt));
+  return {
+    deviceId,
+    model:           d.model || inner.model || "H102CSH",
+    firmwareVersion: inner.firmware_version ?? inner.fw_version ?? null,
+    battery:         inner.battery_level    ?? inner.battery    ?? null,
+    signal:          inner.signal_strength  ?? inner.signal     ?? null,
+    networkType:     inner.network_type     ?? inner.networkType     ?? null,
+    networkOperator: inner.network_operator ?? inner.networkOperator ?? null,
+    simIccid:        inner.sim_iccid        ?? inner.iccid      ?? null,
+    phone:           inner.phone_number     ?? d.phone          ?? null,
+    status:          d.status || "Online",
+    lastSeen,
+  };
+}
+
+function buildSos(deviceId: string, alarms: Record<string, any>[]) {
+  const sosEvents   = alarms.filter(a => /sos/i.test(a.type || ""));
+  const fallAlarms  = alarms.filter(a => /fall/i.test(a.type || ""));
+  const sedentary   = alarms.filter(a => /sedentary/i.test(a.type || ""));
+  return {
+    deviceId,
+    sosEvents,
+    fallAlarms,
+    sedentaryAlarms: sedentary,
+    callLogs: [], // populated when call_logs Firestore collection is available
+  };
+}
+
 function buildLocationTrack(deviceId: string, history: HealthRecord[]) {
   const records = history.filter(r => r.location && typeof r.location.lat === "number" && typeof r.location.lng === "number");
   const tracks = records.map(r => ({ lat: r.location!.lat, lng: r.location!.lng, time: istDateTime(r.timestamp) }));
@@ -303,7 +359,7 @@ function sendWatchAck(res: Response): void {
   res.end(buf);
 }
 
-app.post("/4g/pb/upload", async (req: Request, res: Response) => {
+app.post("/v1/4g/pb/upload", async (req: Request, res: Response) => {
   try {
     const data = req.body as Record<string, any>;
     await db.collection("live_devices").doc(String(data.device_id)).set({ ...data, receivedAt: new Date() });
@@ -317,7 +373,7 @@ app.post("/4g/pb/upload", async (req: Request, res: Response) => {
 });
 
 // â"€â"€â"€ HEALTH DATA â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-app.get("/api/health-data", async (_req: Request, res: Response) => {
+app.get("/v1/api/health-data", async (_req: Request, res: Response) => {
   try {
     const snapshot = await db.collection("live_devices").get();
     const data = snapshot.docs.map(doc => {
@@ -350,21 +406,21 @@ app.get("/api/health-data", async (_req: Request, res: Response) => {
   }
 });
 
-app.get("/api/device/:deviceId/bloodsugar", async (req: Request, res: Response) => {
+app.get("/v1/api/device/:deviceId/bloodsugar", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
     res.json(buildBloodSugar(deviceId, await getDeviceHealthHistory(deviceId)));
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-app.get("/api/device/:deviceId/bloodketone", async (req: Request, res: Response) => {
+app.get("/v1/api/device/:deviceId/bloodketone", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
     res.json(buildBloodKetone(deviceId, await getDeviceHealthHistory(deviceId)));
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-app.get("/api/device/:deviceId/uricacid", async (req: Request, res: Response) => {
+app.get("/v1/api/device/:deviceId/uricacid", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
     res.json(buildUricAcid(deviceId, await getDeviceHealthHistory(deviceId)));
@@ -374,7 +430,7 @@ app.get("/api/device/:deviceId/uricacid", async (req: Request, res: Response) =>
 // ─── GROUPED ENDPOINTS (one Firestore read per group) ─────────
 
 // heartrate + bloodpressure + bloodoxygen + bodytemp
-app.get("/api/device/:deviceId/vitals", async (req: Request, res: Response) => {
+app.get("/v1/api/device/:deviceId/vitals", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
@@ -389,7 +445,7 @@ app.get("/api/device/:deviceId/vitals", async (req: Request, res: Response) => {
 });
 
 // overview + sleep + hearthealth (HRV) + pressure (stress)
-app.get("/api/device/:deviceId/wellness", async (req: Request, res: Response) => {
+app.get("/v1/api/device/:deviceId/wellness", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
     const [history, liveFallback] = await Promise.all([
@@ -407,7 +463,7 @@ app.get("/api/device/:deviceId/wellness", async (req: Request, res: Response) =>
 });
 
 // ecg only
-app.get("/api/device/:deviceId/diagnostics", async (req: Request, res: Response) => {
+app.get("/v1/api/device/:deviceId/diagnostics", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
     const history = await getDeviceHealthHistory(deviceId);
@@ -415,8 +471,31 @@ app.get("/api/device/:deviceId/diagnostics", async (req: Request, res: Response)
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+app.get("/v1/api/device/:deviceId/info", async (req: Request, res: Response) => {
+  try {
+    const deviceId = req.params.deviceId as string;
+    res.json(await buildInfo(deviceId));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.get("/v1/api/device/:deviceId/sos", async (req: Request, res: Response) => {
+  try {
+    const deviceId = req.params.deviceId as string;
+    const alarmsSnap = await db.collection("alarms").where("deviceId", "==", deviceId).get();
+    const alarms = alarmsSnap.docs.map(doc => {
+      const d = doc.data() as Record<string, any>;
+      let time = "";
+      if (d.time)            time = d.time.toDate ? istDateTime(d.time.toDate()) : String(d.time);
+      else if (d.receivedAt) time = d.receivedAt.toDate ? istDateTime(d.receivedAt.toDate()) : String(d.receivedAt);
+      else if (d.timestamp)  time = istDateTime(new Date(d.timestamp));
+      return { id: doc.id, deviceId: d.deviceId || d.device_id || "", type: d.type || "", time, location: d.location || "", content: d.content || "" };
+    });
+    res.json(buildSos(deviceId, alarms));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // locationtrack + device-scoped alarms
-app.get("/api/device/:deviceId/safety", async (req: Request, res: Response) => {
+app.get("/v1/api/device/:deviceId/safety", async (req: Request, res: Response) => {
   try {
     const deviceId = req.params.deviceId as string;
     const [history, alarmsSnap] = await Promise.all([
@@ -438,7 +517,7 @@ app.get("/api/device/:deviceId/safety", async (req: Request, res: Response) => {
 
 
 // â"€â"€â"€ ALARM LIST â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-app.get("/api/alarms", async (_req: Request, res: Response) => {
+app.get("/v1/api/alarms", async (_req: Request, res: Response) => {
   try {
     const snapshot = await db.collection("alarms").get();
     const alarms = snapshot.docs.map(doc => {

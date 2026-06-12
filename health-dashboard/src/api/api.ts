@@ -3,7 +3,7 @@ import type {
   VitalsData, WellnessData, DiagnosticsData, SafetyData,
 } from "../types";
 
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "/api";
+const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "/v1/api";
 
 async function get<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -20,6 +20,10 @@ export const getVitals      = (id: string) => get<VitalsData>(`${BASE}/device/${
 export const getWellness    = (id: string) => get<WellnessData>(`${BASE}/device/${id}/wellness`);
 export const getDiagnostics = (id: string) => get<DiagnosticsData>(`${BASE}/device/${id}/diagnostics`);
 export const getSafety      = (id: string) => get<SafetyData>(`${BASE}/device/${id}/safety`);
+
+// ─── New endpoints ─────────────────────────────────────────────
+export const getDeviceInfo = (id: string) => get<Record<string, any>>(`${BASE}/device/${id}/info`);
+export const getSos        = (id: string) => get<Record<string, any>>(`${BASE}/device/${id}/sos`);
 
 // ─── Individual endpoints still used by "more" tabs ───────────
 export const getBloodSugar  = (id: string) => get<SimpleSeriesData>(`${BASE}/device/${id}/bloodsugar`);
