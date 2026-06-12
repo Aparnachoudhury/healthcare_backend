@@ -49,7 +49,7 @@ const DeviceDetail = () => {
 
   useEffect(() => {
     loadData();
-    const timer = setInterval(loadData, 30_000);
+    const timer = setInterval(loadData, 10_000);
     return () => clearInterval(timer);
   }, [loadData]);
 

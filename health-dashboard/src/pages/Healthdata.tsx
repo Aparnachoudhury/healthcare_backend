@@ -7,22 +7,23 @@ interface SearchState { deviceId: string; nickname: string; phone: string; }
 
 const Healthdata = () => {
   const navigate = useNavigate();
-  const [raw,     setRaw]     = useState<DeviceRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search,  setSearch]  = useState<SearchState>({ deviceId: "", nickname: "", phone: "" });
-  const [applied, setApplied] = useState<SearchState>({ deviceId: "", nickname: "", phone: "" });
-  const [page,    setPage]    = useState(1);
+  const [raw,         setRaw]         = useState<DeviceRow[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [search,      setSearch]      = useState<SearchState>({ deviceId: "", nickname: "", phone: "" });
+  const [applied,     setApplied]     = useState<SearchState>({ deviceId: "", nickname: "", phone: "" });
+  const [page,        setPage]        = useState(1);
   const PAGE_SIZE = 10;
 
   useEffect(() => {
     function loadData() {
       getHealthData()
-        .then(setRaw)
+        .then(data => { setRaw(data); setLastUpdated(new Date()); })
         .catch(err => console.error("API ERROR:", err))
         .finally(() => setLoading(false));
     }
     loadData();
-    const timer = setInterval(loadData, 30_000);
+    const timer = setInterval(loadData, 10_000);
     return () => clearInterval(timer);
   }, []);
 
@@ -42,8 +43,14 @@ const Healthdata = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: "16px" }}>
+      <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
         <h1 style={{ fontSize: "16px", fontWeight: 600, color: "var(--text-primary)" }}>Health Data</h1>
+        {lastUpdated && (
+          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+            <span style={{ color: "#10B981" }}>●</span>{" "}
+            Live · last refreshed {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          </span>
+        )}
       </div>
       <div style={card}>
         <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>

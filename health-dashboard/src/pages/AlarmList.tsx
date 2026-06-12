@@ -14,7 +14,7 @@ const AlarmList = () => {
         .finally(() => setLoading(false));
     }
     loadAlarms();
-    const timer = setInterval(loadAlarms, 30_000);
+    const timer = setInterval(loadAlarms, 10_000);
     return () => clearInterval(timer);
   }, []);
 
