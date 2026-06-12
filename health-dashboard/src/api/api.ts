@@ -6,7 +6,7 @@ import type {
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "/v1/api";
 
 async function get<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+  const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`API Error: ${response.status}`);
   return response.json() as Promise<T>;
 }
